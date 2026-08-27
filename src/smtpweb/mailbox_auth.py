@@ -68,11 +68,23 @@ class MailboxAuth:
             return None
 
         path = self._creds_path(mailbox)
-        if path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Atomic exclusive create: if two logins race to claim the same
+        # unclaimed mailbox, exactly one of them wins this open() and sets
+        # the password; the other falls through to the verify branch below
+        # and is checked against whichever password actually won the race.
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            with os.fdopen(fd, "w") as f:
+                f.write(json.dumps(_hash_password(password), indent=2))
+            return mailbox
+
+        try:
             record = json.loads(path.read_text())
             return mailbox if _verify_password(password, record) else None
-
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(_hash_password(password), indent=2))
-        path.chmod(0o600)
-        return mailbox
+        except (OSError, json.JSONDecodeError, KeyError, ValueError):
+            return None

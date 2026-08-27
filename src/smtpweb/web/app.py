@@ -1,4 +1,5 @@
 import secrets
+import time
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
@@ -12,6 +13,7 @@ from smtpweb.storage import EmailStorage
 
 STATIC_DIR = Path(__file__).parent / "static"
 SESSION_COOKIE = "smtpweb_session"
+SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 
 
 class LoginPayload(BaseModel):
@@ -21,13 +23,26 @@ class LoginPayload(BaseModel):
 
 def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
     app = FastAPI(title="smtpweb")
-    sessions: dict[str, str] = {}
+    # token -> (mailbox, expires_at). Expired entries are evicted lazily
+    # (on lookup) and swept opportunistically (on login), since nothing
+    # else ever removes a session that its owner never logs out of.
+    sessions: dict[str, tuple[str, float]] = {}
+
+    def _sweep_expired_sessions() -> None:
+        now = time.time()
+        expired = [token for token, (_, expires_at) in sessions.items() if expires_at <= now]
+        for token in expired:
+            del sessions[token]
 
     def require_session(
         session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
     ) -> str:
-        mailbox = sessions.get(session) if session else None
-        if mailbox is None:
+        entry = sessions.get(session) if session else None
+        if entry is None:
+            raise HTTPException(401, "Not authenticated")
+        mailbox, expires_at = entry
+        if expires_at <= time.time():
+            sessions.pop(session, None)
             raise HTTPException(401, "Not authenticated")
         return mailbox
 
@@ -36,10 +51,11 @@ def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
         mailbox = mailbox_auth.login(payload.username, payload.password)
         if mailbox is None:
             raise HTTPException(401, "Invalid credentials")
+        _sweep_expired_sessions()
         token = secrets.token_urlsafe(32)
-        sessions[token] = mailbox
+        sessions[token] = (mailbox, time.time() + SESSION_MAX_AGE_SECONDS)
         response.set_cookie(
-            SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30
+            SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE_SECONDS
         )
         return {"username": mailbox}
 
