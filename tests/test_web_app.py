@@ -124,6 +124,74 @@ class TestEmailDetail:
         assert response.status_code == 404
 
 
+class TestAttachmentDisposition:
+    """PDF/image/text attachments should preview inline in the browser;
+    everything else (and especially anything that could carry a script,
+    like HTML or SVG) must still force a download — see the
+    INLINE_SAFE_MEDIA_TYPES comment in web/app.py."""
+
+    def _upload_and_fetch(self, app_client, storage, filename, content=b"data"):
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[(filename, "application/octet-stream", content)],
+            )
+        )
+        email_id = results[0]["id"]
+        login(app_client, "bob@example.com", "bobs-password")
+        return app_client.get(f"/api/emails/{email_id}/attachments/{filename}")
+
+    def test_pdf_is_inline(self, app_client, storage):
+        response = self._upload_and_fetch(app_client, storage, "scan.pdf", b"%PDF-1.4")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert "inline" in response.headers["content-disposition"]
+
+    def test_png_is_inline(self, app_client, storage):
+        response = self._upload_and_fetch(app_client, storage, "photo.png")
+        assert "inline" in response.headers["content-disposition"]
+
+    def test_plain_text_is_inline(self, app_client, storage):
+        response = self._upload_and_fetch(app_client, storage, "note.txt")
+        assert "inline" in response.headers["content-disposition"]
+
+    def test_html_attachment_forces_download_not_inline(self, app_client, storage):
+        """The critical case: an HTML (or SVG) attachment must never be
+        set to render inline, since it's served from this app's own
+        origin and could carry a script with access to the session."""
+        response = self._upload_and_fetch(app_client, storage, "evil.html", b"<script>1</script>")
+        assert "attachment" in response.headers["content-disposition"]
+        assert "inline" not in response.headers["content-disposition"]
+
+    def test_svg_attachment_forces_download_not_inline(self, app_client, storage):
+        response = self._upload_and_fetch(app_client, storage, "evil.svg", b"<svg onload=alert(1)>")
+        assert "attachment" in response.headers["content-disposition"]
+
+    def test_unknown_extension_defaults_to_attachment(self, app_client, storage):
+        response = self._upload_and_fetch(app_client, storage, "mystery.bin")
+        assert "attachment" in response.headers["content-disposition"]
+
+    def test_disposition_ignores_claimed_content_type_lie(self, app_client, storage):
+        """A sender claiming an .html file is "application/pdf" in the
+        MIME headers must not get it treated as inline — disposition is
+        decided from the filename extension server-side, not trusted
+        sender-supplied metadata."""
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[("evil.html", "application/pdf", b"<script>1</script>")],
+            )
+        )
+        email_id = results[0]["id"]
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.get(f"/api/emails/{email_id}/attachments/evil.html")
+        assert "attachment" in response.headers["content-disposition"]
+
+    def test_nosniff_header_present(self, app_client, storage):
+        response = self._upload_and_fetch(app_client, storage, "scan.pdf")
+        assert response.headers["x-content-type-options"] == "nosniff"
+
+
 class TestUnauthenticatedAccessBlocked:
     def test_emails_list_requires_session(self, app_client):
         assert app_client.get("/api/emails").status_code == 401

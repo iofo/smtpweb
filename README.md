@@ -243,4 +243,4 @@ mailbox — there's no way to pass a different mailbox in in the request.
 - `GET /api/emails` — list received emails (metadata only)
 - `GET /api/emails/{id}` — full detail, including body text/html
 - `GET /api/emails/{id}/raw` — download the original `.eml`
-- `GET /api/emails/{id}/attachments/{filename}` — download an attachment
+- `GET /api/emails/{id}/attachments/{filename}` — fetch an attachment; PDFs, common image types, and plain text render inline in the browser (e.g. printer-scanned PDFs preview directly), everything else downloads. The inline/download decision is made server-side from the filename extension, never from the sender-claimed content type, so a mislabeled attachment can't render inline — see `INLINE_SAFE_MEDIA_TYPES` in `src/smtpweb/web/app.py`.

@@ -1,3 +1,4 @@
+import mimetypes
 import secrets
 import time
 from pathlib import Path
@@ -14,6 +15,23 @@ from smtpweb.storage import EmailStorage
 STATIC_DIR = Path(__file__).parent / "static"
 SESSION_COOKIE = "smtpweb_session"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
+
+# Types safe to render inline in the browser instead of forcing a download.
+# Deliberately excludes text/html, image/svg+xml, and anything else that
+# could carry an active script — since attachments are served from this
+# app's own origin, rendering one of those inline would let a malicious
+# "attachment" run script with access to the logged-in session (a stored
+# XSS path). Determined from the filename extension (mimetypes), not the
+# content-type the sending email claimed, so a mislabeled attachment can't
+# talk its way into the inline allowlist.
+INLINE_SAFE_MEDIA_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "text/plain",
+}
 
 
 class LoginPayload(BaseModel):
@@ -104,7 +122,18 @@ def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
             raise HTTPException(400, "Invalid attachment reference")
         if not path.exists():
             raise HTTPException(404, "Attachment not found")
-        return FileResponse(path, filename=path.name)
+
+        media_type, _ = mimetypes.guess_type(path.name)
+        media_type = media_type or "application/octet-stream"
+        disposition = "inline" if media_type in INLINE_SAFE_MEDIA_TYPES else "attachment"
+
+        return FileResponse(
+            path,
+            media_type=media_type,
+            filename=path.name,
+            content_disposition_type=disposition,
+            headers={"X-Content-Type-Options": "nosniff"},
+        )
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
