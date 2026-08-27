@@ -30,7 +30,10 @@ This starts:
 - an SMTP server on `0.0.0.0:1025`
 - a web UI on `http://0.0.0.0:8080`
 
-Send it some test emails:
+On first run, since no credentials are configured, it generates a random
+SMTP username/password and prints where they were saved — see
+[Authentication](#authentication) below. Send it some test emails (the
+script authenticates automatically using those generated credentials):
 
 ```bash
 python scripts/send_test_emails.py
@@ -42,16 +45,36 @@ Then open `http://127.0.0.1:8080` to see them in the inbox.
 
 All settings are read from environment variables:
 
-| Variable              | Default          | Description                       |
-|-----------------------|------------------|------------------------------------|
-| `SMTPWEB_SMTP_HOST`   | `0.0.0.0`        | SMTP listen address                |
-| `SMTPWEB_SMTP_PORT`   | `1025`           | SMTP listen port                   |
-| `SMTPWEB_WEB_HOST`    | `0.0.0.0`        | Web UI listen address              |
-| `SMTPWEB_WEB_PORT`    | `8080`           | Web UI listen port                 |
-| `SMTPWEB_DATA_DIR`    | `./data/emails`  | Directory emails are stored under  |
+| Variable                 | Default          | Description                        |
+|---------------------------|------------------|-------------------------------------|
+| `SMTPWEB_SMTP_HOST`      | `0.0.0.0`        | SMTP listen address                |
+| `SMTPWEB_SMTP_PORT`      | `1025`           | SMTP listen port                   |
+| `SMTPWEB_SMTP_USERNAME`  | *(generated)*    | SMTP AUTH username                 |
+| `SMTPWEB_SMTP_PASSWORD`  | *(generated)*    | SMTP AUTH password                 |
+| `SMTPWEB_WEB_HOST`       | `0.0.0.0`        | Web UI listen address              |
+| `SMTPWEB_WEB_PORT`       | `8080`           | Web UI listen port                 |
+| `SMTPWEB_DATA_DIR`       | `./data/emails`  | Directory emails are stored under  |
 
 Binding to the standard SMTP port 25 requires root privileges; the default
 port 1025 avoids that for local development.
+
+## Authentication
+
+The SMTP server always requires `AUTH`, over `STARTTLS` only — there is no
+open-relay mode. On startup it presents a self-signed TLS certificate,
+auto-generated on first run and cached at `<data_dir>/../tls/` (reused on
+restart).
+
+Credentials work the same way: set both `SMTPWEB_SMTP_USERNAME` and
+`SMTPWEB_SMTP_PASSWORD` to use your own, or leave both unset and the server
+generates a random password on first run and writes it to
+`<data_dir>/../smtp_credentials.json` (reused on restart, so it survives
+container restarts as long as the data volume persists). Check the startup
+log or that file for the generated username/password.
+
+Since the certificate is self-signed, SMTP clients need to skip certificate
+verification (as `scripts/send_test_emails.py` does) — this is intended for
+local/dev use; put a trusted TLS-terminating proxy in front for production.
 
 ## Docker
 

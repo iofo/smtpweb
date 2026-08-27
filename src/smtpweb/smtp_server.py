@@ -1,7 +1,9 @@
 import logging
+import ssl
 
 from aiosmtpd.controller import Controller
 
+from smtpweb.auth import Authenticator
 from smtpweb.storage import EmailStorage
 
 log = logging.getLogger(__name__)
@@ -34,6 +36,20 @@ class StorageHandler:
         return "250 Message accepted for delivery"
 
 
-def build_controller(storage: EmailStorage, host: str, port: int) -> Controller:
+def build_controller(
+    storage: EmailStorage,
+    host: str,
+    port: int,
+    authenticator: Authenticator,
+    tls_context: ssl.SSLContext,
+) -> Controller:
     handler = StorageHandler(storage)
-    return Controller(handler, hostname=host, port=port)
+    return Controller(
+        handler,
+        hostname=host,
+        port=port,
+        authenticator=authenticator,
+        auth_required=True,
+        auth_require_tls=True,
+        tls_context=tls_context,
+    )
