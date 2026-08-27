@@ -220,6 +220,7 @@ data/mail/<mailbox>/emails/<email-id>/
   body.txt               # text/plain part, if present
   body.html              # text/html part, if present
   attachments/<filename>
+  attachments/thumbnails/<filename>.png   # PDF attachments only, first page
 
 data/smtp/smtp_credentials.json   # SMTP AUTH username + PBKDF2 hash + salt
 data/smtp/tls/cert.pem, key.pem   # self-signed cert used for SMTP STARTTLS
@@ -244,3 +245,6 @@ mailbox — there's no way to pass a different mailbox in in the request.
 - `GET /api/emails/{id}` — full detail, including body text/html
 - `GET /api/emails/{id}/raw` — download the original `.eml`
 - `GET /api/emails/{id}/attachments/{filename}` — fetch an attachment; PDFs, common image types, and plain text render inline in the browser (e.g. printer-scanned PDFs preview directly), everything else downloads. The inline/download decision is made server-side from the filename extension, never from the sender-claimed content type, so a mislabeled attachment can't render inline — see `INLINE_SAFE_MEDIA_TYPES` in `src/smtpweb/web/app.py`.
+- `GET /api/emails/{id}/attachments/{filename}/thumbnail` — a PNG of a PDF attachment's first page (rendered with `pypdfium2` when the message is received), used by the UI to show a thumbnail without downloading the whole PDF; 404 if the attachment isn't a PDF or the PDF couldn't be rendered.
+
+In the web UI, image and PDF-with-thumbnail attachments render inline as thumbnails; clicking one opens it in a popup (an `<img>` for images, the browser's native PDF viewer in an `<iframe>` for PDFs) with an X to close, rather than downloading. A separate download icon on each thumbnail (visible on hover) downloads the file directly regardless.

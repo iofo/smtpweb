@@ -135,6 +135,24 @@ def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
             headers={"X-Content-Type-Options": "nosniff"},
         )
 
+    @app.get("/api/emails/{email_id}/attachments/{filename}/thumbnail")
+    def get_attachment_thumbnail(
+        email_id: str, filename: str, mailbox: str = Depends(require_session)
+    ):
+        try:
+            path = storage.get_attachment_thumbnail_path(mailbox, email_id, filename)
+        except ValueError:
+            raise HTTPException(400, "Invalid attachment reference")
+        if not path.exists():
+            raise HTTPException(404, "Thumbnail not found")
+        return FileResponse(
+            path,
+            media_type="image/png",
+            filename=path.name,
+            content_disposition_type="inline",
+            headers={"X-Content-Type-Options": "nosniff"},
+        )
+
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from smtpweb.mailbox import sanitize_mailbox_name
+from smtpweb.pdf_thumbnail import generate_pdf_thumbnail
 
 
 class EmailStorage:
@@ -17,6 +18,8 @@ class EmailStorage:
     <mail_dir>/<mailbox>/emails/<id>/body.txt         (if text/plain exists)
     <mail_dir>/<mailbox>/emails/<id>/body.html        (if text/html exists)
     <mail_dir>/<mailbox>/emails/<id>/attachments/<filename>
+    <mail_dir>/<mailbox>/emails/<id>/attachments/thumbnails/<filename>.png
+                                                       (PDF attachments only)
 
     A message addressed to multiple recipients is stored as a full copy
     under each recipient's mailbox.
@@ -82,9 +85,21 @@ class EmailStorage:
                 att_dir = email_dir / "attachments"
                 att_dir.mkdir(exist_ok=True)
                 for filename, content_type, content in attachments_data:
-                    (att_dir / filename).write_bytes(content)
+                    att_path = att_dir / filename
+                    att_path.write_bytes(content)
+
+                    has_thumbnail = False
+                    if filename.lower().endswith(".pdf"):
+                        thumb_path = att_dir / "thumbnails" / f"{filename}.png"
+                        has_thumbnail = generate_pdf_thumbnail(att_path, thumb_path)
+
                     attachments_meta.append(
-                        {"filename": filename, "content_type": content_type, "size": len(content)}
+                        {
+                            "filename": filename,
+                            "content_type": content_type,
+                            "size": len(content),
+                            "has_thumbnail": has_thumbnail,
+                        }
                     )
 
             metadata = {
@@ -153,6 +168,14 @@ class EmailStorage:
         if not safe_name or safe_name in (".", ".."):
             raise ValueError("Invalid filename")
         return self._email_dir(mailbox, email_id) / "attachments" / safe_name
+
+    def get_attachment_thumbnail_path(self, mailbox: str, email_id: str, filename: str) -> Path:
+        safe_name = Path(filename).name
+        if not safe_name or safe_name in (".", ".."):
+            raise ValueError("Invalid filename")
+        return (
+            self._email_dir(mailbox, email_id) / "attachments" / "thumbnails" / f"{safe_name}.png"
+        )
 
     def _email_dir(self, mailbox: str, email_id: str) -> Path:
         mailbox = sanitize_mailbox_name(mailbox)

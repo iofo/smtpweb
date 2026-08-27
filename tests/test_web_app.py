@@ -1,4 +1,4 @@
-from .conftest import make_envelope
+from .conftest import MINIMAL_PDF_BYTES, make_envelope
 
 
 def login(client, username, password):
@@ -190,6 +190,80 @@ class TestAttachmentDisposition:
     def test_nosniff_header_present(self, app_client, storage):
         response = self._upload_and_fetch(app_client, storage, "scan.pdf")
         assert response.headers["x-content-type-options"] == "nosniff"
+
+
+class TestPdfThumbnail:
+    def test_pdf_attachment_has_thumbnail_in_metadata(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[("scan.pdf", "application/pdf", MINIMAL_PDF_BYTES)],
+            )
+        )
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        detail = app_client.get(f"/api/emails/{email_id}").json()
+        assert detail["attachments"][0]["has_thumbnail"] is True
+
+    def test_thumbnail_endpoint_returns_png(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[("scan.pdf", "application/pdf", MINIMAL_PDF_BYTES)],
+            )
+        )
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.get(f"/api/emails/{email_id}/attachments/scan.pdf/thumbnail")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
+        assert "inline" in response.headers["content-disposition"]
+
+    def test_non_pdf_attachment_has_no_thumbnail(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[("note.txt", "text/plain", b"hello")],
+            )
+        )
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.get(f"/api/emails/{email_id}/attachments/note.txt/thumbnail")
+        assert response.status_code == 404
+
+    def test_corrupted_pdf_thumbnail_404s(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[("scan.pdf", "application/pdf", b"not a real pdf")],
+            )
+        )
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.get(f"/api/emails/{email_id}/attachments/scan.pdf/thumbnail")
+        assert response.status_code == 404
+
+    def test_thumbnail_requires_session(self, app_client):
+        response = app_client.get("/api/emails/some-id/attachments/f.pdf/thumbnail")
+        assert response.status_code == 401
+
+    def test_cannot_fetch_another_mailboxes_thumbnail(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[("scan.pdf", "application/pdf", MINIMAL_PDF_BYTES)],
+            )
+        )
+        email_id = results[0]["id"]
+
+        login(app_client, "eve@example.com", "eves-password")
+        response = app_client.get(f"/api/emails/{email_id}/attachments/scan.pdf/thumbnail")
+        assert response.status_code == 404
 
 
 class TestUnauthenticatedAccessBlocked:

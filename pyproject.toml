@@ -11,7 +11,9 @@ dependencies = [
     "aiosmtpd>=1.4.6",
     "cryptography>=42",
     "fastapi>=0.111",
+    "pillow>=10",
     "pydantic>=2",
+    "pypdfium2>=4",
     "uvicorn[standard]>=0.29",
 ]
 

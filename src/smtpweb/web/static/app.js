@@ -10,6 +10,7 @@ const ICONS = {
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>`,
   paperclip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
   download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>`,
+  close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>`,
 };
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
@@ -17,6 +18,10 @@ const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
 function isImageFilename(filename) {
   const ext = (filename.split(".").pop() || "").toLowerCase();
   return IMAGE_EXTENSIONS.has(ext);
+}
+
+function isPdfFilename(filename) {
+  return filename.toLowerCase().endsWith(".pdf");
 }
 
 const AVATAR_PALETTE = [
@@ -157,6 +162,10 @@ function renderInbox() {
         <p>Select an email to view it.</p>
       </div>
     </main>
+    <div id="lightbox" class="lightbox">
+      <button id="lightbox-close" class="lightbox-close" title="Close">${ICONS.close}</button>
+      <div id="lightbox-body" class="lightbox-body"></div>
+    </div>
   `;
   document.getElementById("whoami").textContent = currentUsername;
   document.getElementById("refresh").addEventListener("click", loadList);
@@ -166,10 +175,34 @@ function renderInbox() {
     selectedId = null;
     renderLogin();
   });
+  document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+  document.getElementById("lightbox").addEventListener("click", (e) => {
+    if (e.target.id === "lightbox") closeLightbox();
+  });
 
   loadList();
   refreshTimer = setInterval(loadList, 10000);
 }
+
+function openLightbox(type, url, name) {
+  const body = document.getElementById("lightbox-body");
+  body.innerHTML =
+    type === "pdf"
+      ? `<iframe src="${url}" title="${escapeHtml(name)}"></iframe>`
+      : `<img src="${url}" alt="${escapeHtml(name)}" />`;
+  document.getElementById("lightbox").classList.add("open");
+}
+
+function closeLightbox() {
+  const lightbox = document.getElementById("lightbox");
+  if (!lightbox) return;
+  lightbox.classList.remove("open");
+  document.getElementById("lightbox-body").innerHTML = "";
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeLightbox();
+});
 
 async function loadList() {
   const res = await fetch("/api/emails");
@@ -235,17 +268,25 @@ async function selectEmail(id) {
 
   let attachmentsHtml = "";
   if (email.attachments && email.attachments.length) {
-    const images = email.attachments.filter((a) => isImageFilename(a.filename));
-    const others = email.attachments.filter((a) => !isImageFilename(a.filename));
+    const media = email.attachments.filter(
+      (a) => isImageFilename(a.filename) || (isPdfFilename(a.filename) && a.has_thumbnail)
+    );
+    const others = email.attachments.filter((a) => !media.includes(a));
 
-    const imagesHtml = images.length
-      ? `<div class="image-attachments">${images
+    const mediaHtml = media.length
+      ? `<div class="image-attachments">${media
           .map((a) => {
             const url = `/api/emails/${id}/attachments/${encodeURIComponent(a.filename)}`;
+            const isPdf = isPdfFilename(a.filename);
+            const thumbSrc = isPdf ? `${url}/thumbnail` : url;
             return `
-              <a class="image-attachment" href="${url}" target="_blank" title="${escapeHtml(a.filename)} (${formatBytes(a.size)})">
-                <img src="${url}" alt="${escapeHtml(a.filename)}" loading="lazy" />
-              </a>
+              <div class="image-attachment" data-url="${url}" data-type="${isPdf ? "pdf" : "image"}"
+                   data-name="${escapeHtml(a.filename)}" role="button" tabindex="0"
+                   title="${escapeHtml(a.filename)} (${formatBytes(a.size)})">
+                <img src="${thumbSrc}" alt="${escapeHtml(a.filename)}" loading="lazy" />
+                ${isPdf ? `<span class="media-badge">PDF</span>` : ""}
+                <a class="media-download" href="${url}" download="${escapeHtml(a.filename)}" title="Download">${ICONS.download}</a>
+              </div>
             `;
           })
           .join("")}</div>`
@@ -266,7 +307,7 @@ async function selectEmail(id) {
     attachmentsHtml = `
       <div class="attachments">
         <div class="attachments-title">${email.attachments.length} Attachment${email.attachments.length === 1 ? "" : "s"}</div>
-        ${imagesHtml}
+        ${mediaHtml}
         ${chips}
       </div>
     `;
@@ -283,6 +324,20 @@ async function selectEmail(id) {
     ${bodyHtml}
     <a class="raw-link" href="/api/emails/${id}/raw">${ICONS.download} Download raw .eml</a>
   `;
+
+  detailEl.querySelectorAll(".image-attachment").forEach((el) => {
+    const open = () => openLightbox(el.dataset.type, el.dataset.url, el.dataset.name);
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
+  });
+  detailEl.querySelectorAll(".media-download").forEach((el) => {
+    el.addEventListener("click", (e) => e.stopPropagation());
+  });
 }
 
 checkAuth();

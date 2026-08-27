@@ -1,5 +1,7 @@
 aiosmtpd==1.4.6
 cryptography==50.0.1
 fastapi==0.141.1
+pillow==12.3.0
 pydantic==2.13.4
+pypdfium2==5.13.0
 uvicorn[standard]==0.52.4

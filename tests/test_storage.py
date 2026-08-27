@@ -1,6 +1,6 @@
 import pytest
 
-from .conftest import make_envelope
+from .conftest import MINIMAL_PDF_BYTES, make_envelope
 
 
 def test_save_message_creates_mailbox_and_files(storage, mail_dir):
@@ -36,9 +36,35 @@ def test_save_message_writes_attachments(storage):
     assert att["filename"] == "note.txt"
     assert att["content_type"] == "text/plain"
     assert att["size"] == len(b"attachment bytes")
+    assert att["has_thumbnail"] is False
 
     path = storage.get_attachment_path(meta["mailbox"], meta["id"], "note.txt")
     assert path.read_bytes() == b"attachment bytes"
+
+
+def test_pdf_attachment_gets_thumbnail(storage):
+    results = storage.save_message(
+        make_envelope(attachments=[("scan.pdf", "application/pdf", MINIMAL_PDF_BYTES)])
+    )
+    meta = results[0]
+    att = meta["attachments"][0]
+    assert att["has_thumbnail"] is True
+
+    thumb_path = storage.get_attachment_thumbnail_path(meta["mailbox"], meta["id"], "scan.pdf")
+    assert thumb_path.exists()
+    assert thumb_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_corrupted_pdf_attachment_has_no_thumbnail(storage):
+    results = storage.save_message(
+        make_envelope(attachments=[("scan.pdf", "application/pdf", b"not a real pdf")])
+    )
+    meta = results[0]
+    att = meta["attachments"][0]
+    assert att["has_thumbnail"] is False
+
+    thumb_path = storage.get_attachment_thumbnail_path(meta["mailbox"], meta["id"], "scan.pdf")
+    assert not thumb_path.exists()
 
 
 def test_multi_recipient_message_stored_under_each_mailbox(storage):
