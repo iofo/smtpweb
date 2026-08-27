@@ -39,6 +39,23 @@ pip install -e .
 # or: pip install -r requirements.txt
 ```
 
+## Testing
+
+```bash
+pip install -e ".[test]"
+# or: pip install -r requirements-test.txt
+pytest
+```
+
+The suite (`tests/`) is unit/integration-level and doesn't touch the real
+`./data` directory — every test uses a fresh `tmp_path`. Coverage
+includes mailbox address sanitization/path-traversal, password hashing
+and the atomic first-login claim (including a concurrency test for the
+claim race), SMTP AUTH and credential auto-generation, storage
+read/write and mailbox isolation, and the full web API via FastAPI's
+`TestClient` (login/logout, session scoping, cross-mailbox access
+blocked).
+
 ## Running
 
 Run each process (in separate terminals):

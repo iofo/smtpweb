@@ -1,0 +1,135 @@
+from .conftest import make_envelope
+
+
+def login(client, username, password):
+    return client.post("/api/login", json={"username": username, "password": password})
+
+
+class TestLogin:
+    def test_unauthenticated_request_rejected(self, app_client):
+        response = app_client.get("/api/me")
+        assert response.status_code == 401
+
+    def test_first_login_claims_mailbox(self, app_client):
+        response = login(app_client, "bob@example.com", "bobs-password")
+        assert response.status_code == 200
+        assert response.json() == {"username": "bob@example.com"}
+        assert "smtpweb_session" in response.cookies
+
+    def test_authenticated_request_after_login(self, app_client):
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.get("/api/me")
+        assert response.status_code == 200
+        assert response.json() == {"username": "bob@example.com"}
+
+    def test_second_login_wrong_password_rejected(self, app_client):
+        login(app_client, "bob@example.com", "bobs-password")
+        app_client.cookies.clear()
+        response = login(app_client, "bob@example.com", "wrong-password")
+        assert response.status_code == 401
+
+    def test_second_login_correct_password_succeeds(self, app_client):
+        login(app_client, "bob@example.com", "bobs-password")
+        app_client.cookies.clear()
+        response = login(app_client, "bob@example.com", "bobs-password")
+        assert response.status_code == 200
+
+    def test_username_is_case_insensitive_for_login(self, app_client):
+        login(app_client, "Bob@Example.com", "bobs-password")
+        app_client.cookies.clear()
+        response = login(app_client, "bob@example.com", "bobs-password")
+        assert response.status_code == 200
+
+    def test_logout_clears_session(self, app_client):
+        login(app_client, "bob@example.com", "bobs-password")
+        assert app_client.get("/api/me").status_code == 200
+        app_client.post("/api/logout")
+        assert app_client.get("/api/me").status_code == 401
+
+
+class TestMailboxIsolation:
+    def test_inbox_only_shows_own_mail(self, app_client, storage):
+        storage.save_message(make_envelope(rcpt_tos=("bob@example.com",), subject="For Bob"))
+        storage.save_message(make_envelope(rcpt_tos=("eve@example.com",), subject="For Eve"))
+
+        login(app_client, "bob@example.com", "bobs-password")
+        subjects = {e["subject"] for e in app_client.get("/api/emails").json()}
+        assert subjects == {"For Bob"}
+
+    def test_cannot_fetch_another_mailboxes_email_by_id(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(rcpt_tos=("bob@example.com",), subject="Bob only")
+        )
+        bob_email_id = results[0]["id"]
+
+        login(app_client, "eve@example.com", "eves-password")
+        response = app_client.get(f"/api/emails/{bob_email_id}")
+        assert response.status_code == 404
+
+    def test_shared_message_visible_to_both_recipients(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(rcpt_tos=("bob@example.com", "eve@example.com"), subject="Both")
+        )
+        shared_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        assert app_client.get(f"/api/emails/{shared_id}").status_code == 200
+
+        app_client.cookies.clear()
+        login(app_client, "eve@example.com", "eves-password")
+        assert app_client.get(f"/api/emails/{shared_id}").status_code == 200
+
+
+class TestEmailDetail:
+    def test_get_email_detail_includes_body(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(rcpt_tos=("bob@example.com",), text="plain body", html="<p>html body</p>")
+        )
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        detail = app_client.get(f"/api/emails/{email_id}").json()
+        assert "plain body" in detail["text_body"]
+        assert "html body" in detail["html_body"]
+
+    def test_download_raw_eml(self, app_client, storage):
+        results = storage.save_message(make_envelope(rcpt_tos=("bob@example.com",)))
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.get(f"/api/emails/{email_id}/raw")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "message/rfc822"
+
+    def test_download_attachment(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[("note.txt", "text/plain", b"attachment contents")],
+            )
+        )
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.get(f"/api/emails/{email_id}/attachments/note.txt")
+        assert response.status_code == 200
+        assert response.content == b"attachment contents"
+
+    def test_missing_attachment_404s(self, app_client, storage):
+        results = storage.save_message(make_envelope(rcpt_tos=("bob@example.com",)))
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.get(f"/api/emails/{email_id}/attachments/does-not-exist.txt")
+        assert response.status_code == 404
+
+
+class TestUnauthenticatedAccessBlocked:
+    def test_emails_list_requires_session(self, app_client):
+        assert app_client.get("/api/emails").status_code == 401
+
+    def test_email_detail_requires_session(self, app_client):
+        assert app_client.get("/api/emails/some-id").status_code == 401
+
+    def test_attachment_requires_session(self, app_client):
+        assert app_client.get("/api/emails/some-id/attachments/f.txt").status_code == 401
