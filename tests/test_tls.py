@@ -1,6 +1,6 @@
 import ssl
 
-from smtpweb.smtp.tls import build_tls_context, ensure_self_signed_cert
+from smtpweb.common.tls import build_tls_context, ensure_self_signed_cert
 
 
 def test_ensure_self_signed_cert_creates_files(tmp_path):
