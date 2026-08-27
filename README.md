@@ -134,6 +134,20 @@ verification (as `scripts/send_test_emails.py` does) — this is intended
 for local/dev use; put a trusted TLS-terminating proxy in front for
 production.
 
+It's stored in plaintext (`SMTPWEB_SMTP_STATE_DIR/smtp_credentials.json`),
+unlike web mailbox passwords below — this is a single shared service
+credential meant to be copied into other systems' SMTP client config
+(not a personal password a human remembers), so it needs to stay
+recoverable. To rotate it and print the new plaintext password for
+pasting elsewhere:
+
+```bash
+python scripts/reset_smtp_password.py
+```
+
+This only writes the new credentials file — restart `smtp_main` (or the
+`smtp` container) afterward for it to take effect.
+
 **Web UI** logins are per-mailbox: the username is the recipient email
 address, and there's no separate signup step. The first time anyone logs
 in for a given address, whatever password they submit becomes that
