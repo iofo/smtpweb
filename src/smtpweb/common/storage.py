@@ -7,6 +7,7 @@ from pathlib import Path
 
 from smtpweb.common.mailbox import sanitize_mailbox_name
 from smtpweb.common.pdf_thumbnail import generate_pdf_thumbnail
+from smtpweb.common.security import PRIVATE_FILE_MODE
 
 
 class EmailStorage:
@@ -32,6 +33,16 @@ class EmailStorage:
         except OSError:
             # e.g. a read-only mount before the writer side has created it
             pass
+        # mailbox -> (emails_dir mtime_ns at last read, its sorted email list).
+        # metadata.json files are write-once (never edited after creation),
+        # so the only way list_emails()'s result can go stale is a new (or
+        # removed) <email-id> subdirectory — which always bumps the parent
+        # emails/ directory's own mtime. That makes one cheap stat() enough
+        # to know whether the full glob+parse+sort below can be skipped.
+        # Safe across the smtp/web process split too: both stat the same
+        # bind-mounted directory, so a write from the smtp process is
+        # visible to the web process's very next list_emails() call.
+        self._list_cache: dict[str, tuple[int, list[dict]]] = {}
 
     def save_message(self, envelope) -> list[dict]:
         raw_bytes = getattr(envelope, "original_content", None) or envelope.content
@@ -69,15 +80,15 @@ class EmailStorage:
 
             email_dir = self.mail_dir / mailbox / "emails" / email_id
             email_dir.mkdir(parents=True, exist_ok=True)
-            (email_dir / "raw.eml").write_bytes(raw_bytes)
+            self._write_private(email_dir / "raw.eml", raw_bytes)
 
             if text_content is not None:
-                (email_dir / "body.txt").write_text(
-                    text_content, encoding="utf-8", errors="replace"
+                self._write_private(
+                    email_dir / "body.txt", text_content.encode("utf-8", errors="replace")
                 )
             if html_content is not None:
-                (email_dir / "body.html").write_text(
-                    html_content, encoding="utf-8", errors="replace"
+                self._write_private(
+                    email_dir / "body.html", html_content.encode("utf-8", errors="replace")
                 )
 
             attachments_meta = []
@@ -86,7 +97,7 @@ class EmailStorage:
                 att_dir.mkdir(exist_ok=True)
                 for filename, content_type, content in attachments_data:
                     att_path = att_dir / filename
-                    att_path.write_bytes(content)
+                    self._write_private(att_path, content)
 
                     has_thumbnail = False
                     if filename.lower().endswith(".pdf"):
@@ -117,10 +128,21 @@ class EmailStorage:
                 "has_html_body": html_content is not None,
                 "attachments": attachments_meta,
             }
-            (email_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+            self._write_private(
+                email_dir / "metadata.json", json.dumps(metadata, indent=2).encode("utf-8")
+            )
             results.append(metadata)
 
         return results
+
+    @staticmethod
+    def _write_private(path: Path, data: bytes) -> None:
+        """Write data to path and restrict it to owner read/write — every
+        email file (body, attachment, metadata) may hold sensitive content
+        (e.g. a scanned document), not just the credential files that
+        already got this treatment."""
+        path.write_bytes(data)
+        path.chmod(PRIVATE_FILE_MODE)
 
     @staticmethod
     def _dedupe_filename(filename: str, used_names: set) -> str:
@@ -137,13 +159,25 @@ class EmailStorage:
 
     def list_emails(self, mailbox: str) -> list[dict]:
         mailbox = sanitize_mailbox_name(mailbox)
+        emails_dir = self.mail_dir / mailbox / "emails"
+        try:
+            current_mtime_ns = emails_dir.stat().st_mtime_ns
+        except OSError:
+            return []
+
+        cached = self._list_cache.get(mailbox)
+        if cached is not None and cached[0] == current_mtime_ns:
+            return cached[1]
+
         emails = []
-        for meta_path in (self.mail_dir / mailbox / "emails").glob("*/metadata.json"):
+        for meta_path in emails_dir.glob("*/metadata.json"):
             try:
                 emails.append(json.loads(meta_path.read_text()))
             except (json.JSONDecodeError, OSError):
                 continue
         emails.sort(key=lambda m: m.get("received_at", ""), reverse=True)
+
+        self._list_cache[mailbox] = (current_mtime_ns, emails)
         return emails
 
     def get_email(self, mailbox: str, email_id: str) -> dict:

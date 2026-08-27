@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 
+from smtpweb.common.security import PRIVATE_FILE_MODE
+
 log = logging.getLogger(__name__)
 
 THUMBNAIL_MAX_WIDTH = 320
@@ -21,6 +23,7 @@ def generate_pdf_thumbnail(pdf_path: Path, thumb_path: Path) -> bool:
             image = bitmap.to_pil()
         thumb_path.parent.mkdir(parents=True, exist_ok=True)
         image.save(thumb_path, "PNG")
+        thumb_path.chmod(PRIVATE_FILE_MODE)
         return True
     except Exception:
         log.warning("Failed to generate PDF thumbnail for %s", pdf_path, exc_info=True)

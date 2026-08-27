@@ -260,6 +260,17 @@ A message addressed to multiple recipients is stored as a full copy under
 each recipient's mailbox (each gets its own `metadata.json`, but they
 share the same `<email-id>`).
 
+Every file under `data/mail/` is written `chmod 600` (owner read/write
+only) — email content can be as sensitive as the credentials, especially
+given this project's actual use case of storing printer-scanned
+documents. This only matters if something other than smtpweb's own
+processes could otherwise read `./data/mail` — e.g. another local user
+account, or another container bind-mounting the same host directory,
+running under a different UID; it does nothing against root, or against
+anything already running as the same UID as smtpweb's own containers
+(both containers use the same image and the same fixed UID, which is why
+they can still read each other's files despite this).
+
 ## API
 
 All routes below except `/api/login` require a logged-in session (see

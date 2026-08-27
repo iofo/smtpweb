@@ -15,6 +15,31 @@ def test_save_message_creates_mailbox_and_files(storage, mail_dir):
     assert (email_dir / "body.txt").read_text().strip() == "Hello, this is the body."
 
 
+def test_written_files_are_owner_only(storage, mail_dir):
+    results = storage.save_message(
+        make_envelope(
+            rcpt_tos=("bob@example.com",),
+            html="<p>hi</p>",
+            attachments=[("note.txt", "text/plain", b"x"), ("scan.pdf", "application/pdf", MINIMAL_PDF_BYTES)],
+        )
+    )
+    meta = results[0]
+    email_dir = mail_dir / "bob@example.com" / "emails" / meta["id"]
+
+    checked = [
+        email_dir / "raw.eml",
+        email_dir / "metadata.json",
+        email_dir / "body.txt",
+        email_dir / "body.html",
+        email_dir / "attachments" / "note.txt",
+        email_dir / "attachments" / "scan.pdf",
+        email_dir / "attachments" / "thumbnails" / "scan.pdf.png",
+    ]
+    for path in checked:
+        mode = path.stat().st_mode & 0o777
+        assert mode == 0o600, f"{path} has mode {oct(mode)}, expected 0o600"
+
+
 def test_save_message_writes_html_body(storage):
     results = storage.save_message(
         make_envelope(text="plain part", html="<p>html part</p>")
@@ -99,6 +124,46 @@ def test_list_emails_sorted_newest_first(storage):
 
 def test_list_emails_empty_for_unknown_mailbox(storage):
     assert storage.list_emails("nobody@example.com") == []
+
+
+def test_list_emails_cache_returns_same_object_when_unchanged(storage):
+    """The mtime-based cache should skip re-reading from disk when
+    nothing has changed — verified by identity (`is`), not just
+    equality, since a fresh glob+parse would produce an equal-but-new
+    list object each time."""
+    storage.save_message(make_envelope(subject="first"))
+    first_call = storage.list_emails("bob@example.com")
+    second_call = storage.list_emails("bob@example.com")
+    assert first_call is second_call
+
+
+def test_list_emails_cache_invalidates_on_new_message(storage):
+    """Regression test for the mtime-based cache: a new message must
+    show up on the very next list_emails() call, from either the same
+    EmailStorage instance (this test) or a different one pointed at
+    the same directory (the smtp/web process split in production)."""
+    storage.save_message(make_envelope(subject="first"))
+    assert len(storage.list_emails("bob@example.com")) == 1
+
+    storage.save_message(make_envelope(subject="second"))
+    emails = storage.list_emails("bob@example.com")
+    assert len(emails) == 2
+    assert {e["subject"] for e in emails} == {"first", "second"}
+
+
+def test_list_emails_cache_invalidates_across_storage_instances(mail_dir):
+    """The real-world case: the smtp process and the web process each
+    have their own EmailStorage instance over the same directory."""
+    from smtpweb.common.storage import EmailStorage
+
+    writer = EmailStorage(mail_dir)
+    reader = EmailStorage(mail_dir)
+
+    writer.save_message(make_envelope(subject="from smtp process"))
+    assert len(reader.list_emails("bob@example.com")) == 1
+
+    writer.save_message(make_envelope(subject="a second one"))
+    assert len(reader.list_emails("bob@example.com")) == 2
 
 
 def test_get_email_raises_for_missing_id(storage):
