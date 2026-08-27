@@ -65,6 +65,19 @@ All settings are read from environment variables:
 Binding to the standard SMTP port 25 requires root privileges; the default
 port 1025 avoids that for local development.
 
+## Docker
+
+```bash
+docker build -t smtpweb .
+docker run -d --name smtpweb \
+  -p 1025:1025 -p 8080:8080 \
+  -v smtpweb-data:/data \
+  smtpweb
+```
+
+Emails are stored at `/data/emails` inside the container (`SMTPWEB_DATA_DIR`);
+mount a volume there to persist them across container restarts.
+
 ## Storage layout
 
 Each received email is stored in its own directory under `SMTPWEB_DATA_DIR`:
