@@ -1,0 +1,12 @@
+services:
+  smtpweb:
+    build: .
+    ports:
+      - "1025:1025"
+      - "8080:8080"
+    volumes:
+      - smtpweb-data:/data
+    restart: unless-stopped
+
+volumes:
+  smtpweb-data:

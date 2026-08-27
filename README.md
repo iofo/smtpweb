@@ -78,6 +78,12 @@ docker run -d --name smtpweb \
 Emails are stored at `/data/emails` inside the container (`SMTPWEB_DATA_DIR`);
 mount a volume there to persist them across container restarts.
 
+Or with Docker Compose:
+
+```bash
+docker compose up -d --build
+```
+
 ## Storage layout
 
 Each received email is stored in its own directory under `SMTPWEB_DATA_DIR`:
