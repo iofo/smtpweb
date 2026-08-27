@@ -12,6 +12,13 @@ const ICONS = {
   download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>`,
 };
 
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
+
+function isImageFilename(filename) {
+  const ext = (filename.split(".").pop() || "").toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
 const AVATAR_PALETTE = [
   "#ef4444", "#f97316", "#eab308", "#22c55e",
   "#14b8a6", "#3b82f6", "#6366f1", "#a855f7", "#ec4899",
@@ -228,7 +235,23 @@ async function selectEmail(id) {
 
   let attachmentsHtml = "";
   if (email.attachments && email.attachments.length) {
-    const chips = email.attachments
+    const images = email.attachments.filter((a) => isImageFilename(a.filename));
+    const others = email.attachments.filter((a) => !isImageFilename(a.filename));
+
+    const imagesHtml = images.length
+      ? `<div class="image-attachments">${images
+          .map((a) => {
+            const url = `/api/emails/${id}/attachments/${encodeURIComponent(a.filename)}`;
+            return `
+              <a class="image-attachment" href="${url}" target="_blank" title="${escapeHtml(a.filename)} (${formatBytes(a.size)})">
+                <img src="${url}" alt="${escapeHtml(a.filename)}" loading="lazy" />
+              </a>
+            `;
+          })
+          .join("")}</div>`
+      : "";
+
+    const chips = others
       .map(
         (a) => `
           <a class="attachment-chip" href="/api/emails/${id}/attachments/${encodeURIComponent(a.filename)}" target="_blank">
@@ -239,9 +262,11 @@ async function selectEmail(id) {
         `
       )
       .join("");
+
     attachmentsHtml = `
       <div class="attachments">
         <div class="attachments-title">${email.attachments.length} Attachment${email.attachments.length === 1 ? "" : "s"}</div>
+        ${imagesHtml}
         ${chips}
       </div>
     `;

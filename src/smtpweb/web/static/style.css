@@ -331,6 +331,36 @@ a {
   margin-bottom: 8px;
 }
 
+.image-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.image-attachment {
+  display: block;
+  width: 140px;
+  height: 140px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.image-attachment img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.15s ease;
+}
+
+.image-attachment:hover img {
+  transform: scale(1.06);
+}
+
 .attachment-chip {
   display: flex;
   align-items: center;
