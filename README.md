@@ -239,6 +239,21 @@ network or behind a VPN/proxy, since (a) it has no built-in TLS and (b)
 its self-service mailbox claiming has no ownership verification (see
 [Authentication](#authentication)).
 
+### CI: build, test, and publish to Docker Hub
+
+`.github/workflows/docker.yml` runs on every push/PR to `main`: builds the
+`test` stage and runs the full pytest suite against the packaged install
+(same as `docker build --target test`, above). On pushes to `main` only,
+and only after tests pass, it also builds and pushes the production image
+to Docker Hub as `<DOCKERHUB_USERNAME>/smtpweb:latest` and
+`:<short-sha>`.
+
+This needs two repository secrets (**Settings → Secrets and variables →
+Actions**) — `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (an
+[access token](https://hub.docker.com/settings/security), not your Docker
+Hub password). Without them, the `test` job still runs fine; only
+`publish` needs the secrets.
+
 ## Storage layout
 
 ```
