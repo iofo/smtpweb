@@ -3,7 +3,10 @@
 
 Authenticates over STARTTLS. Credentials are taken from --username/
 --password, or SMTPWEB_SMTP_USERNAME/SMTPWEB_SMTP_PASSWORD, or (as a
-fallback for local dev) the auto-generated data/smtp_credentials.json.
+fallback for local dev) the auto-generated data/smtp/smtp_credentials.json.
+
+Recipients below (bob@example.com, eve@example.com) become mailboxes you
+can log into in the web UI with that address as the username.
 """
 
 import argparse
@@ -15,7 +18,7 @@ from email.message import EmailMessage
 from pathlib import Path
 
 DEFAULT_CREDENTIALS_FILE = (
-    Path(__file__).resolve().parent.parent / "data" / "smtp_credentials.json"
+    Path(__file__).resolve().parent.parent / "data" / "smtp" / "smtp_credentials.json"
 )
 
 

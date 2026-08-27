@@ -92,3 +92,56 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+#whoami {
+  color: #555;
+}
+#login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+#login-form {
+  width: 320px;
+  padding: 24px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+#login-form h1 {
+  margin-top: 0;
+  font-size: 18px;
+}
+#login-form p {
+  font-size: 13px;
+  color: #555;
+}
+#login-form label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+#login-form input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+#login-form button {
+  width: 100%;
+  padding: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+#login-form .error {
+  color: #c0392b;
+  font-size: 13px;
+}

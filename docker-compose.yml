@@ -6,7 +6,8 @@ services:
     ports:
       - "1025:1025"
     volumes:
-      - ./data:/data
+      - ./data/mail:/data/mail
+      - ./data/smtp:/data/smtp
     restart: unless-stopped
 
   web:
@@ -16,5 +17,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data
+      - ./data/mail:/data/mail:ro
+      - ./data/web:/data/web
     restart: unless-stopped

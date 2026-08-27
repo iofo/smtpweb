@@ -1,8 +1,8 @@
 # smtpweb
 
-An SMTP server that accepts incoming email and writes each message to the
-filesystem, plus a web UI to browse received emails and download
-attachments.
+An SMTP server that accepts incoming email, sorts it into one mailbox per
+recipient address on the filesystem, plus a web UI for each recipient to
+log in and browse their own mail and attachments.
 
 - SMTP handling: [`aiosmtpd`](https://aiosmtpd.readthedocs.io/)
 - Web backend: [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/)
@@ -10,15 +10,23 @@ attachments.
 
 ## Architecture
 
-SMTP receipt and the web UI are two independent processes/services —
-`smtpweb.smtp_main` and `smtpweb.web_main` — that share nothing but the
-data directory on disk. There's no in-memory state or IPC between them:
-the SMTP process writes each message straight to `SMTPWEB_DATA_DIR`, and
-the web process reads that same directory on every API request. Each has
-its own separate authentication (see below), so a compromise of one
-doesn't hand over the other's credentials, and in Docker they run as two
-separate containers so you can expose SMTP publicly while keeping the web
-UI off the public network.
+SMTP receipt and the web UI are two independent processes — `smtpweb.smtp_main`
+and `smtpweb.web_main` — that share nothing but received mail on disk.
+There's no in-memory state or IPC between them: the SMTP process writes
+each message straight into `SMTPWEB_MAIL_DIR`, and the web process reads
+that same directory on every API request. Each has its own separate
+authentication and its own credential storage (see below), so a
+compromise of one doesn't hand over the other's secrets.
+
+In Docker they run as two separate containers with **separate volume
+mounts**, not just separate processes: the `smtp` container can read/write
+mail and its own SMTP AUTH credentials/TLS key, but has no access at all
+to the web login credentials; the `web` container can read/write web login
+credentials, but only has **read-only** access to mail, and no access at
+all to the SMTP credentials/TLS key. This means you can expose the `smtp`
+container publicly while keeping `web` off the public network entirely,
+and a bug in either process can't be used to read or tamper with the
+other's secrets.
 
 ## Setup
 
@@ -45,111 +53,153 @@ This starts:
 - an SMTP server on `0.0.0.0:1025`
 - a web UI on `http://0.0.0.0:8080`
 
-On first run, since no credentials are configured, each process generates
-its own random username/password and prints where they were saved — see
+On first run, since no SMTP credentials are configured, `smtp_main`
+generates a random SMTP username/password — see
 [Authentication](#authentication) below. Send some test emails (the
-script authenticates automatically using the generated SMTP credentials):
+script authenticates automatically using those generated credentials):
 
 ```bash
 python scripts/send_test_emails.py
 ```
 
-Then open `http://127.0.0.1:8080` and log in with the generated web
-credentials (from `data/web_credentials.json`) to see them in the inbox.
+This delivers mail to `bob@example.com` and `eve@example.com`. Open
+`http://127.0.0.1:8080` and log in as `bob@example.com` with any password
+you like — since that mailbox has never been logged into before, that
+password is now set as `bob@example.com`'s password, and you'll see his
+mail. Logging in as `eve@example.com` the same way gives you a separate
+account that only sees mail addressed to her.
 
 ## Configuration
 
 All settings are read from environment variables:
 
-| Variable                 | Default          | Description                        |
-|---------------------------|------------------|-------------------------------------|
-| `SMTPWEB_SMTP_HOST`      | `0.0.0.0`        | SMTP listen address                |
-| `SMTPWEB_SMTP_PORT`      | `1025`           | SMTP listen port                   |
-| `SMTPWEB_SMTP_USERNAME`  | *(generated)*    | SMTP AUTH username                 |
-| `SMTPWEB_SMTP_PASSWORD`  | *(generated)*    | SMTP AUTH password                 |
-| `SMTPWEB_WEB_HOST`       | `0.0.0.0`        | Web UI listen address              |
-| `SMTPWEB_WEB_PORT`       | `8080`           | Web UI listen port                 |
-| `SMTPWEB_WEB_USERNAME`   | *(generated)*    | Web UI Basic Auth username         |
-| `SMTPWEB_WEB_PASSWORD`   | *(generated)*    | Web UI Basic Auth password         |
-| `SMTPWEB_DATA_DIR`       | `./data/emails`  | Directory emails are stored under  |
+| Variable                    | Default        | Description                                    |
+|------------------------------|----------------|--------------------------------------------------|
+| `SMTPWEB_SMTP_HOST`         | `0.0.0.0`      | SMTP listen address                             |
+| `SMTPWEB_SMTP_PORT`         | `1025`         | SMTP listen port                                |
+| `SMTPWEB_SMTP_USERNAME`     | *(generated)*  | SMTP AUTH username                              |
+| `SMTPWEB_SMTP_PASSWORD`     | *(generated)*  | SMTP AUTH password                              |
+| `SMTPWEB_WEB_HOST`          | `0.0.0.0`      | Web UI listen address                           |
+| `SMTPWEB_WEB_PORT`          | `8080`         | Web UI listen port                              |
+| `SMTPWEB_MAIL_DIR`          | `./data/mail`  | Received mail, one subdirectory per mailbox     |
+| `SMTPWEB_SMTP_STATE_DIR`    | `./data/smtp`  | SMTP AUTH credentials + TLS cert (smtp_main only) |
+| `SMTPWEB_WEB_STATE_DIR`     | `./data/web`   | Per-mailbox web login credentials (web_main only) |
 
 Binding to the standard SMTP port 25 requires root privileges; the default
 port 1025 avoids that for local development.
 
 ## Authentication
 
-Both processes require auth, and neither has an open/anonymous mode:
+There are two independent, unrelated auth systems here — logging into the
+SMTP server (to send mail in) is nothing to do with logging into a mailbox
+in the web UI (to read mail out). Neither has an open/anonymous mode.
 
-**SMTP** always requires `AUTH`, over `STARTTLS` only. On startup it
-presents a self-signed TLS certificate, auto-generated on first run and
-cached at `<data_dir>/../tls/` (reused on restart). Set both
+**SMTP** always requires `AUTH`, over `STARTTLS` only, with a single
+service-wide credential (not per-mailbox) that controls who can relay mail
+into the server at all. On startup it presents a self-signed TLS
+certificate, auto-generated on first run and cached at
+`SMTPWEB_SMTP_STATE_DIR/tls/` (reused on restart). Set both
 `SMTPWEB_SMTP_USERNAME` and `SMTPWEB_SMTP_PASSWORD` to use your own
 credentials, or leave both unset and the server generates a random
-password on first run, writing it to `<data_dir>/../smtp_credentials.json`
-(reused on restart). Since the certificate is self-signed, SMTP clients
-need to skip certificate verification (as `scripts/send_test_emails.py`
-does) — this is intended for local/dev use; put a trusted TLS-terminating
-proxy in front for production.
+password on first run, writing it to
+`SMTPWEB_SMTP_STATE_DIR/smtp_credentials.json` (reused on restart). Since
+the certificate is self-signed, SMTP clients need to skip certificate
+verification (as `scripts/send_test_emails.py` does) — this is intended
+for local/dev use; put a trusted TLS-terminating proxy in front for
+production.
 
-**Web UI** always requires HTTP Basic Auth on every route, including the
-static UI itself. Set both `SMTPWEB_WEB_USERNAME` and
-`SMTPWEB_WEB_PASSWORD` to use your own credentials, or leave both unset
-and the server generates a random password on first run, writing it to
-`<data_dir>/../web_credentials.json` (reused on restart). Basic Auth over
-plain HTTP still sends credentials base64-encoded, not encrypted — put a
-TLS-terminating reverse proxy in front before exposing this beyond
-localhost/a trusted network.
+**Web UI** logins are per-mailbox: the username is the recipient email
+address, and there's no separate signup step. The first time anyone logs
+in for a given address, whatever password they submit becomes that
+mailbox's password (self-service claiming); every login after that must
+match it. Passwords are never stored in plaintext or reversibly encrypted
+— each is a PBKDF2-HMAC-SHA256 hash with its own random salt
+(`hashlib.pbkdf2_hmac`, 310,000 iterations), written to
+`SMTPWEB_WEB_STATE_DIR/<mailbox>/credentials.json` and verified with a
+constant-time comparison (see `src/smtpweb/mailbox_auth.py`). A logged-in
+session (an HttpOnly cookie, held in-memory server-side) can only see mail
+in its own mailbox.
 
-Setting only one of a pair of username/password env vars (for either
-service) is treated as a misconfiguration and the process refuses to
-start.
+Because claiming a mailbox requires nothing but knowing the address, this
+is only appropriate for a server that isn't exposed to the internet —
+anyone who knows/guesses an address could claim it first. **This is not
+implemented, but the fix would be:** verify the person actually controls
+that address before letting them claim it or reset its password — e.g.
+generate a one-time code, email it to that address using the SMTP side of
+this same app, and require it back before setting a new password. See the
+docstring on `MailboxAuth` in `src/smtpweb/mailbox_auth.py` for where this
+would go.
+
+Setting only one of a pair of `SMTPWEB_SMTP_USERNAME`/`SMTPWEB_SMTP_PASSWORD`
+is treated as a misconfiguration and `smtp_main` refuses to start.
 
 ## Docker
 
 Each container runs one process from the same image, selected by
-overriding the command:
+overriding the command, with separate volume mounts per container so
+neither can read the other's credentials:
 
 ```bash
 docker build -t smtpweb .
-docker run -d --name smtpweb-smtp -p 1025:1025 -v "$(pwd)/data:/data" \
+
+docker run -d --name smtpweb-smtp -p 1025:1025 \
+  -v "$(pwd)/data/mail:/data/mail" \
+  -v "$(pwd)/data/smtp:/data/smtp" \
   smtpweb python -m smtpweb.smtp_main
-docker run -d --name smtpweb-web -p 8080:8080 -v "$(pwd)/data:/data" \
+
+docker run -d --name smtpweb-web -p 8080:8080 \
+  -v "$(pwd)/data/mail:/data/mail:ro" \
+  -v "$(pwd)/data/web:/data/web" \
   smtpweb python -m smtpweb.web_main
 ```
 
 Or with Docker Compose, which brings both up together as one stack, each
-in its own container, sharing `./data`:
+in its own container with the mounts above already wired up:
 
 ```bash
 docker compose up -d --build
 ```
 
-Emails and credential/cert files are stored under `/data` inside each
-container (`SMTPWEB_DATA_DIR=/data/emails`); the compose file bind-mounts
-`./data` so you can inspect them on the host while the containers run.
+You can inspect mail, SMTP credentials, and web login credentials on the
+host at `./data/mail`, `./data/smtp`, and `./data/web` respectively while
+the containers run — but note the `web` container itself only ever has
+read-only access to `./data/mail`, and no access at all to `./data/smtp`.
 
-For a real deployment, only the `smtp` service needs to be reachable from
-the public internet — keep the `web` service on an internal network or
-behind a VPN/proxy, since it's the one with no built-in TLS.
+For a real deployment, only the `smtp` container needs to be reachable
+from the public internet — keep the `web` container on an internal
+network or behind a VPN/proxy, since (a) it has no built-in TLS and (b)
+its self-service mailbox claiming has no ownership verification (see
+[Authentication](#authentication)).
 
 ## Storage layout
 
 ```
-<data_dir>/../smtp_credentials.json   # SMTP AUTH credentials, if auto-generated
-<data_dir>/../web_credentials.json    # web UI Basic Auth credentials, if auto-generated
-<data_dir>/../tls/cert.pem, key.pem   # self-signed cert used for SMTP STARTTLS
-<data_dir>/<email-id>/
+data/mail/<mailbox>/emails/<email-id>/
   raw.eml              # the full original message
   metadata.json         # parsed headers, recipients, attachment index
   body.txt               # text/plain part, if present
   body.html              # text/html part, if present
   attachments/<filename>
+
+data/smtp/smtp_credentials.json   # SMTP AUTH credentials, if auto-generated
+data/smtp/tls/cert.pem, key.pem   # self-signed cert used for SMTP STARTTLS
+
+data/web/<mailbox>/credentials.json   # that mailbox's web login (PBKDF2 hash + salt)
 ```
+
+A message addressed to multiple recipients is stored as a full copy under
+each recipient's mailbox (each gets its own `metadata.json`, but they
+share the same `<email-id>`).
 
 ## API
 
-All routes below require HTTP Basic Auth (see [Authentication](#authentication)).
+All routes below except `/api/login` require a logged-in session (see
+[Authentication](#authentication)) and are scoped to that session's
+mailbox — there's no way to pass a different mailbox in in the request.
 
+- `POST /api/login` — `{"username": "<email>", "password": "..."}`; claims the mailbox on first use
+- `POST /api/logout`
+- `GET /api/me` — the logged-in mailbox address
 - `GET /api/emails` — list received emails (metadata only)
 - `GET /api/emails/{id}` — full detail, including body text/html
 - `GET /api/emails/{id}/raw` — download the original `.eml`

@@ -4,35 +4,42 @@ import ssl
 from aiosmtpd.controller import Controller
 
 from smtpweb.auth import Authenticator
+from smtpweb.mailbox import sanitize_mailbox_name
 from smtpweb.storage import EmailStorage
 
 log = logging.getLogger(__name__)
 
 
 class StorageHandler:
-    """aiosmtpd handler that accepts any sender/recipient and persists
-    every message it receives via EmailStorage."""
+    """aiosmtpd handler that accepts mail for any syntactically valid
+    recipient and persists a copy into each recipient's mailbox via
+    EmailStorage."""
 
     def __init__(self, storage: EmailStorage):
         self.storage = storage
 
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
+        try:
+            sanitize_mailbox_name(address)
+        except ValueError:
+            return "553 5.1.3 Bad recipient address syntax"
         envelope.rcpt_tos.append(address)
         return "250 OK"
 
     async def handle_DATA(self, server, session, envelope):
         try:
-            metadata = self.storage.save_message(envelope)
+            results = self.storage.save_message(envelope)
         except Exception:
             log.exception("Failed to store incoming message")
             return "451 Requested action aborted: error in processing"
-        log.info(
-            "Received message %s from %s to %s (%d bytes)",
-            metadata["id"],
-            metadata["mail_from"],
-            metadata["to"],
-            metadata["size_bytes"],
-        )
+        for metadata in results:
+            log.info(
+                "Stored message %s in mailbox %s from %s (%d bytes)",
+                metadata["id"],
+                metadata["mailbox"],
+                metadata["mail_from"],
+                metadata["size_bytes"],
+            )
         return "250 Message accepted for delivery"
 
 

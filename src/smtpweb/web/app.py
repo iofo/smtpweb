@@ -1,59 +1,79 @@
-import base64
 import secrets
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
 from fastapi.requests import Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
+from smtpweb.mailbox_auth import MailboxAuth
 from smtpweb.storage import EmailStorage
 
 STATIC_DIR = Path(__file__).parent / "static"
+SESSION_COOKIE = "smtpweb_session"
 
 
-def create_app(storage: EmailStorage, username: str, password: str) -> FastAPI:
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+
+def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
     app = FastAPI(title="smtpweb")
-    username_bytes = username.encode("utf-8")
-    password_bytes = password.encode("utf-8")
+    sessions: dict[str, str] = {}
 
-    @app.middleware("http")
-    async def require_basic_auth(request: Request, call_next):
-        header = request.headers.get("authorization", "")
-        if header.lower().startswith("basic "):
-            try:
-                decoded = base64.b64decode(header[6:]).decode("utf-8")
-                supplied_user, _, supplied_pass = decoded.partition(":")
-            except Exception:
-                supplied_user, supplied_pass = "", ""
-            user_ok = secrets.compare_digest(supplied_user.encode("utf-8"), username_bytes)
-            pass_ok = secrets.compare_digest(supplied_pass.encode("utf-8"), password_bytes)
-            if user_ok and pass_ok:
-                return await call_next(request)
-        return Response(
-            status_code=401,
-            headers={"WWW-Authenticate": 'Basic realm="smtpweb"'},
+    def require_session(
+        session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    ) -> str:
+        mailbox = sessions.get(session) if session else None
+        if mailbox is None:
+            raise HTTPException(401, "Not authenticated")
+        return mailbox
+
+    @app.post("/api/login")
+    def login(payload: LoginPayload, response: Response):
+        mailbox = mailbox_auth.login(payload.username, payload.password)
+        if mailbox is None:
+            raise HTTPException(401, "Invalid credentials")
+        token = secrets.token_urlsafe(32)
+        sessions[token] = mailbox
+        response.set_cookie(
+            SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30
         )
+        return {"username": mailbox}
+
+    @app.post("/api/logout")
+    def logout(request: Request, response: Response):
+        token = request.cookies.get(SESSION_COOKIE)
+        if token:
+            sessions.pop(token, None)
+        response.delete_cookie(SESSION_COOKIE)
+        return {"ok": True}
+
+    @app.get("/api/me")
+    def me(mailbox: str = Depends(require_session)):
+        return {"username": mailbox}
 
     @app.get("/api/emails")
-    def list_emails():
-        return storage.list_emails()
+    def list_emails(mailbox: str = Depends(require_session)):
+        return storage.list_emails(mailbox)
 
     @app.get("/api/emails/{email_id}")
-    def get_email(email_id: str):
+    def get_email(email_id: str, mailbox: str = Depends(require_session)):
         try:
-            meta = storage.get_email(email_id)
+            meta = storage.get_email(mailbox, email_id)
         except (FileNotFoundError, ValueError):
             raise HTTPException(404, "Email not found")
         meta = dict(meta)
-        meta["text_body"] = storage.get_body_text(email_id)
-        meta["html_body"] = storage.get_body_html(email_id)
+        meta["text_body"] = storage.get_body_text(mailbox, email_id)
+        meta["html_body"] = storage.get_body_html(mailbox, email_id)
         return meta
 
     @app.get("/api/emails/{email_id}/raw")
-    def get_raw(email_id: str):
+    def get_raw(email_id: str, mailbox: str = Depends(require_session)):
         try:
-            path = storage.get_raw_path(email_id)
+            path = storage.get_raw_path(mailbox, email_id)
         except ValueError:
             raise HTTPException(400, "Invalid email id")
         if not path.exists():
@@ -61,9 +81,9 @@ def create_app(storage: EmailStorage, username: str, password: str) -> FastAPI:
         return FileResponse(path, media_type="message/rfc822", filename=f"{email_id}.eml")
 
     @app.get("/api/emails/{email_id}/attachments/{filename}")
-    def get_attachment(email_id: str, filename: str):
+    def get_attachment(email_id: str, filename: str, mailbox: str = Depends(require_session)):
         try:
-            path = storage.get_attachment_path(email_id, filename)
+            path = storage.get_attachment_path(mailbox, email_id, filename)
         except ValueError:
             raise HTTPException(400, "Invalid attachment reference")
         if not path.exists():

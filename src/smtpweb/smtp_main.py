@@ -17,9 +17,9 @@ def run():
     )
 
     settings = Settings()
-    storage = EmailStorage(settings.data_dir)
+    storage = EmailStorage(settings.mail_dir)
 
-    creds_path = settings.data_dir.parent / "smtp_credentials.json"
+    creds_path = settings.smtp_state_dir / "smtp_credentials.json"
     username, password, generated = resolve_credentials(
         creds_path,
         settings.smtp_username,
@@ -29,7 +29,7 @@ def run():
     )
     authenticator = Authenticator(username, password)
 
-    cert_path, key_path = ensure_self_signed_cert(settings.data_dir.parent / "tls")
+    cert_path, key_path = ensure_self_signed_cert(settings.smtp_state_dir / "tls")
     tls_context = build_tls_context(cert_path, key_path)
 
     controller = build_controller(
@@ -48,7 +48,10 @@ def run():
             username,
             creds_path,
         )
-    log.info("Storing emails under %s", settings.data_dir.resolve())
+    log.info(
+        "Storing mail under %s (one subdirectory per recipient mailbox)",
+        settings.mail_dir.resolve(),
+    )
 
     stop_event = threading.Event()
     signal.signal(signal.SIGTERM, lambda signum, frame: stop_event.set())

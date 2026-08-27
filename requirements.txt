@@ -1,4 +1,5 @@
 aiosmtpd==1.4.6
 cryptography==50.0.1
 fastapi==0.141.1
+pydantic==2.13.4
 uvicorn[standard]==0.52.4
