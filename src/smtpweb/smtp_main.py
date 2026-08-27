@@ -19,14 +19,14 @@ def run():
     storage = EmailStorage(settings.mail_dir)
 
     creds_path = settings.smtp_state_dir / "smtp_credentials.json"
-    username, password, generated = resolve_credentials(
+    username, password_record, generated, new_password = resolve_credentials(
         creds_path,
         settings.smtp_username,
         settings.smtp_password,
         ("SMTPWEB_SMTP_USERNAME", "SMTPWEB_SMTP_PASSWORD"),
         default_username="smtpweb",
     )
-    authenticator = Authenticator(username, password)
+    authenticator = Authenticator(username, password_record)
 
     cert_path, key_path = ensure_self_signed_cert(settings.smtp_state_dir / "tls")
     tls_context = build_tls_context(cert_path, key_path)
@@ -43,9 +43,16 @@ def run():
     if generated:
         log.warning(
             "No SMTP credentials configured via SMTPWEB_SMTP_USERNAME/SMTPWEB_SMTP_PASSWORD "
-            "— using generated credentials (username=%r) stored at %s",
+            "— using credentials (username=%r) persisted at %s (password hash only; "
+            "the plaintext is not recoverable from disk)",
             username,
             creds_path,
+        )
+    if new_password is not None:
+        log.warning(
+            "Generated a new SMTP password — only its hash is stored, so this is the "
+            "only time it will ever be shown: %s",
+            new_password,
         )
     log.info(
         "Storing mail under %s (one subdirectory per recipient mailbox)",

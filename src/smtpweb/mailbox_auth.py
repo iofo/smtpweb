@@ -1,31 +1,9 @@
-import hashlib
-import hmac
 import json
 import os
 from pathlib import Path
 
 from smtpweb.mailbox import sanitize_mailbox_name
-
-PBKDF2_ITERATIONS = 310_000
-
-
-def _hash_password(password: str) -> dict:
-    salt = os.urandom(16)
-    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
-    return {
-        "algorithm": "pbkdf2_sha256",
-        "iterations": PBKDF2_ITERATIONS,
-        "salt": salt.hex(),
-        "hash": derived.hex(),
-    }
-
-
-def _verify_password(password: str, record: dict) -> bool:
-    salt = bytes.fromhex(record["salt"])
-    expected = bytes.fromhex(record["hash"])
-    iterations = record.get("iterations", PBKDF2_ITERATIONS)
-    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return hmac.compare_digest(derived, expected)
+from smtpweb.password_hashing import hash_password, verify_password
 
 
 class MailboxAuth:
@@ -80,11 +58,11 @@ class MailboxAuth:
             pass
         else:
             with os.fdopen(fd, "w") as f:
-                f.write(json.dumps(_hash_password(password), indent=2))
+                f.write(json.dumps(hash_password(password), indent=2))
             return mailbox
 
         try:
             record = json.loads(path.read_text())
-            return mailbox if _verify_password(password, record) else None
+            return mailbox if verify_password(password, record) else None
         except (OSError, json.JSONDecodeError, KeyError, ValueError):
             return None

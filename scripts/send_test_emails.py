@@ -2,24 +2,20 @@
 """Send a handful of sample emails to a running smtpweb instance.
 
 Authenticates over STARTTLS. Credentials are taken from --username/
---password, or SMTPWEB_SMTP_USERNAME/SMTPWEB_SMTP_PASSWORD, or (as a
-fallback for local dev) the auto-generated data/smtp/smtp_credentials.json.
+--password or SMTPWEB_SMTP_USERNAME/SMTPWEB_SMTP_PASSWORD — there's no
+file-based fallback, since smtp_credentials.json only ever stores a
+password hash (see scripts/reset_smtp_password.py to see/rotate the
+plaintext).
 
 Recipients below (bob@example.com, eve@example.com) become mailboxes you
 can log into in the web UI with that address as the username.
 """
 
 import argparse
-import json
 import os
 import smtplib
 import ssl
 from email.message import EmailMessage
-from pathlib import Path
-
-DEFAULT_CREDENTIALS_FILE = (
-    Path(__file__).resolve().parent.parent / "data" / "smtp" / "smtp_credentials.json"
-)
 
 
 def plain_email() -> EmailMessage:
@@ -82,14 +78,11 @@ def resolve_credentials(username_arg: str | None, password_arg: str | None):
     if env_username and env_password:
         return env_username, env_password
 
-    if DEFAULT_CREDENTIALS_FILE.exists():
-        data = json.loads(DEFAULT_CREDENTIALS_FILE.read_text())
-        return data["username"], data["password"]
-
     raise SystemExit(
-        "No SMTP credentials found. Pass --username/--password, set "
-        "SMTPWEB_SMTP_USERNAME/SMTPWEB_SMTP_PASSWORD, or ensure "
-        f"{DEFAULT_CREDENTIALS_FILE} exists."
+        "No SMTP credentials found. Pass --username/--password, or set "
+        "SMTPWEB_SMTP_USERNAME/SMTPWEB_SMTP_PASSWORD. (smtp_credentials.json "
+        "only stores a password hash, not something this script can read "
+        "back — use scripts/reset_smtp_password.py to see/rotate it.)"
     )
 
 

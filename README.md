@@ -127,26 +127,26 @@ certificate, auto-generated on first run and cached at
 `SMTPWEB_SMTP_STATE_DIR/tls/` (reused on restart). Set both
 `SMTPWEB_SMTP_USERNAME` and `SMTPWEB_SMTP_PASSWORD` to use your own
 credentials, or leave both unset and the server generates a random
-password on first run, writing it to
-`SMTPWEB_SMTP_STATE_DIR/smtp_credentials.json` (reused on restart). Since
-the certificate is self-signed, SMTP clients need to skip certificate
-verification (as `scripts/send_test_emails.py` does) — this is intended
-for local/dev use; put a trusted TLS-terminating proxy in front for
-production.
+password on first run.
 
-It's stored in plaintext (`SMTPWEB_SMTP_STATE_DIR/smtp_credentials.json`),
-unlike web mailbox passwords below — this is a single shared service
-credential meant to be copied into other systems' SMTP client config
-(not a personal password a human remembers), so it needs to stay
-recoverable. To rotate it and print the new plaintext password for
-pasting elsewhere:
+Like the web mailbox passwords below, it's never stored in plaintext or
+reversibly encrypted — only a PBKDF2-HMAC-SHA256 hash + random salt is
+written to `SMTPWEB_SMTP_STATE_DIR/smtp_credentials.json` (reused on
+restart, see `src/smtpweb/password_hashing.py`). That means the plaintext
+is only ever shown once, at the moment it's generated (in the startup
+log, or printed by the script below) — capture it then, since it can't be
+read back from that file afterward. To rotate it and print the new
+plaintext password for pasting into another system's config:
 
 ```bash
 python scripts/reset_smtp_password.py
 ```
 
 This only writes the new credentials file — restart `smtp_main` (or the
-`smtp` container) afterward for it to take effect.
+`smtp` container) afterward for it to take effect. Since the certificate
+is self-signed, SMTP clients also need to skip certificate verification
+(as `scripts/send_test_emails.py` does) — this is intended for local/dev
+use; put a trusted TLS-terminating proxy in front for production.
 
 **Web UI** logins are per-mailbox: the username is the recipient email
 address, and there's no separate signup step. The first time anyone logs
@@ -221,7 +221,7 @@ data/mail/<mailbox>/emails/<email-id>/
   body.html              # text/html part, if present
   attachments/<filename>
 
-data/smtp/smtp_credentials.json   # SMTP AUTH credentials, if auto-generated
+data/smtp/smtp_credentials.json   # SMTP AUTH username + PBKDF2 hash + salt
 data/smtp/tls/cert.pem, key.pem   # self-signed cert used for SMTP STARTTLS
 
 data/web/<mailbox>/credentials.json   # that mailbox's web login (PBKDF2 hash + salt)
