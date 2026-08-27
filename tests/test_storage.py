@@ -151,6 +151,28 @@ def test_list_emails_cache_invalidates_on_new_message(storage):
     assert {e["subject"] for e in emails} == {"first", "second"}
 
 
+def test_list_emails_cache_survives_identical_mtime_between_writes(storage, mail_dir):
+    """Regression test: relying on directory mtime alone is not quite
+    enough — two writes close enough together can land within the
+    filesystem's actual mtime resolution and report the identical
+    timestamp (this caused real, if intermittent, test failures before
+    entry count was added as a tie-breaker). Deterministically forces
+    that exact scenario — a cached key sharing today's real mtime but a
+    stale entry count/list — rather than relying on timing to reproduce
+    it, and checks list_emails() still detects the change."""
+    storage.save_message(make_envelope(subject="first"))
+    mailbox = "bob@example.com"
+    emails_dir = mail_dir / mailbox / "emails"
+    real_mtime_ns = emails_dir.stat().st_mtime_ns
+    real_count = sum(1 for _ in emails_dir.iterdir())
+
+    stale_count = real_count - 1
+    storage._list_cache[mailbox] = (real_mtime_ns, stale_count, [{"subject": "STALE-INJECTED"}])
+
+    result = storage.list_emails(mailbox)
+    assert result[0]["subject"] == "first"
+
+
 def test_list_emails_cache_invalidates_across_storage_instances(mail_dir):
     """The real-world case: the smtp process and the web process each
     have their own EmailStorage instance over the same directory."""

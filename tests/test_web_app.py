@@ -5,6 +5,24 @@ def login(client, username, password):
     return client.post("/api/login", json={"username": username, "password": password})
 
 
+class TestSessionCookieSecureFlag:
+    """The Secure flag must track cookie_secure exactly: on when TLS is
+    enabled (so the cookie is never sent over an accidental plaintext
+    connection), off when it's not (a Secure cookie set over plain HTTP
+    is simply dropped by real browsers, which would silently break
+    login for the SMTPWEB_WEB_TLS=false / non-TLS testing case)."""
+
+    def test_secure_flag_absent_when_tls_disabled(self, app_client):
+        response = login(app_client, "bob@example.com", "bobs-password")
+        set_cookie = response.headers.get_list("set-cookie")[0]
+        assert "secure" not in set_cookie.lower()
+
+    def test_secure_flag_present_when_tls_enabled(self, secure_app_client):
+        response = login(secure_app_client, "bob@example.com", "bobs-password")
+        set_cookie = response.headers.get_list("set-cookie")[0]
+        assert "Secure" in set_cookie
+
+
 class TestLogin:
     def test_unauthenticated_request_rejected(self, app_client):
         response = app_client.get("/api/me")

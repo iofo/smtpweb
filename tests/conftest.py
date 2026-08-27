@@ -65,6 +65,15 @@ def app_client(storage, mailbox_auth):
     return TestClient(create_app(storage, mailbox_auth))
 
 
+@pytest.fixture
+def secure_app_client(storage, mailbox_auth):
+    """Same as app_client, but built the way web_main does when
+    SMTPWEB_WEB_TLS is enabled (cookie_secure=True)."""
+    from fastapi.testclient import TestClient
+
+    return TestClient(create_app(storage, mailbox_auth, cookie_secure=True))
+
+
 def make_envelope(
     mail_from="sender@example.com",
     rcpt_tos=("bob@example.com",),

@@ -43,7 +43,9 @@ class LoginPayload(BaseModel):
     password: str
 
 
-def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
+def create_app(
+    storage: EmailStorage, mailbox_auth: MailboxAuth, cookie_secure: bool = False
+) -> FastAPI:
     # docs_url/redoc_url/openapi_url disabled: this app has no open/anonymous
     # mode anywhere else, and the auto-generated API docs would otherwise be
     # the one unauthenticated thing exposing the full route/schema surface.
@@ -80,7 +82,12 @@ def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
         token = secrets.token_urlsafe(32)
         sessions[token] = (mailbox, time.time() + SESSION_MAX_AGE_SECONDS)
         response.set_cookie(
-            SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE_SECONDS
+            SESSION_COOKIE,
+            token,
+            httponly=True,
+            samesite="lax",
+            secure=cookie_secure,
+            max_age=SESSION_MAX_AGE_SECONDS,
         )
         return {"username": mailbox}
 

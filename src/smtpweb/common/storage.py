@@ -34,16 +34,18 @@ class EmailStorage:
         except OSError:
             # e.g. a read-only mount before the writer side has created it
             pass
-        # mailbox -> (emails_dir mtime_ns at last read, its sorted email list).
-        # metadata.json files are write-once (never edited after creation),
-        # so the only way list_emails()'s result can go stale is a new (or
-        # removed) <email-id> subdirectory — which always bumps the parent
-        # emails/ directory's own mtime. That makes one cheap stat() enough
-        # to know whether the full glob+parse+sort below can be skipped.
+        # mailbox -> (emails_dir mtime_ns, entry count, sorted email list)
+        # at last read. metadata.json files are write-once (never edited
+        # after creation), so the only way list_emails()'s result can go
+        # stale is a new (or removed) <email-id> subdirectory — which
+        # always bumps the parent emails/ directory's own mtime, making a
+        # single stat() usually enough to know the full glob+parse+sort
+        # below can be skipped (entry count is only consulted as a
+        # tie-breaker when mtime looks unchanged — see list_emails).
         # Safe across the smtp/web process split too: both stat the same
         # bind-mounted directory, so a write from the smtp process is
         # visible to the web process's very next list_emails() call.
-        self._list_cache: dict[str, tuple[int, list[dict]]] = {}
+        self._list_cache: dict[str, tuple[int, int, list[dict]]] = {}
 
     def save_message(self, envelope) -> list[dict]:
         raw_bytes = getattr(envelope, "original_content", None) or envelope.content
@@ -167,8 +169,21 @@ class EmailStorage:
             return []
 
         cached = self._list_cache.get(mailbox)
-        if cached is not None and cached[0] == current_mtime_ns:
-            return cached[1]
+        if cached is not None:
+            cached_mtime_ns, cached_count, cached_emails = cached
+            if cached_mtime_ns == current_mtime_ns:
+                # mtime alone isn't quite enough: two writes close enough
+                # together can land within the filesystem's actual mtime
+                # resolution and report the identical timestamp (this
+                # caused real, if intermittent, test flakiness). Only pay
+                # for a directory scan to disambiguate when mtime says
+                # "maybe unchanged" — a differing mtime already means
+                # "stale" with no need to check further, so the common
+                # case (repeated polling, nothing changed) is the only
+                # one that pays this extra — still far cheaper than the
+                # full glob+read+parse+sort below.
+                if sum(1 for _ in emails_dir.iterdir()) == cached_count:
+                    return cached_emails
 
         emails = []
         for meta_path in emails_dir.glob("*/metadata.json"):
@@ -178,7 +193,7 @@ class EmailStorage:
                 continue
         emails.sort(key=lambda m: m.get("received_at", ""), reverse=True)
 
-        self._list_cache[mailbox] = (current_mtime_ns, emails)
+        self._list_cache[mailbox] = (current_mtime_ns, len(emails), emails)
         return emails
 
     def get_email(self, mailbox: str, email_id: str) -> dict:

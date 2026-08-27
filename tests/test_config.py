@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from smtpweb.common.config import Settings
 
 
@@ -11,6 +13,7 @@ def test_defaults_when_unset(monkeypatch):
         "SMTPWEB_SMTP_PASSWORD",
         "SMTPWEB_WEB_HOST",
         "SMTPWEB_WEB_PORT",
+        "SMTPWEB_WEB_TLS",
         "SMTPWEB_MAIL_DIR",
         "SMTPWEB_SMTP_STATE_DIR",
         "SMTPWEB_WEB_STATE_DIR",
@@ -24,9 +27,22 @@ def test_defaults_when_unset(monkeypatch):
     assert settings.smtp_password is None
     assert settings.web_host == "0.0.0.0"
     assert settings.web_port == 8080
+    assert settings.web_tls_enabled is True
     assert settings.mail_dir == Path("./data/mail")
     assert settings.smtp_state_dir == Path("./data/smtp")
     assert settings.web_state_dir == Path("./data/web")
+
+
+@pytest.mark.parametrize("value", ["true", "True", "TRUE", "1", "yes", "on"])
+def test_web_tls_truthy_values(monkeypatch, value):
+    monkeypatch.setenv("SMTPWEB_WEB_TLS", value)
+    assert Settings().web_tls_enabled is True
+
+
+@pytest.mark.parametrize("value", ["false", "False", "0", "no", "off", "garbage", ""])
+def test_web_tls_falsy_values(monkeypatch, value):
+    monkeypatch.setenv("SMTPWEB_WEB_TLS", value)
+    assert Settings().web_tls_enabled is False
 
 
 def test_reads_environment_set_after_module_import(monkeypatch):
