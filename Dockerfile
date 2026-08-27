@@ -10,7 +10,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+# `pip install .` leaves its own build byproducts (build/lib/, a
+# duplicate copy of the whole package; src/*.egg-info) sitting in the
+# working directory — harmless (no secrets, just the app's own public
+# source again) but pointless bloat in a shipped image.
+RUN pip install --no-cache-dir . && rm -rf build src/*.egg-info
 
 
 # `docker build --target test -t smtpweb:test . && docker run --rm smtpweb:test`
