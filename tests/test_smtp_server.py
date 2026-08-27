@@ -2,7 +2,7 @@ import asyncio
 
 from aiosmtpd.smtp import Envelope
 
-from smtpweb.smtp_server import StorageHandler
+from smtpweb.smtp.server import StorageHandler
 
 from .conftest import make_envelope
 

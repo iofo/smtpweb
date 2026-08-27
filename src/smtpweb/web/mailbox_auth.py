@@ -2,8 +2,9 @@ import json
 import os
 from pathlib import Path
 
-from smtpweb.mailbox import sanitize_mailbox_name
-from smtpweb.password_hashing import hash_password, verify_password
+from smtpweb.common.mailbox import sanitize_mailbox_name
+from smtpweb.common.password_hashing import hash_password, verify_password
+from smtpweb.common.security import PRIVATE_FILE_MODE
 
 
 class MailboxAuth:
@@ -53,7 +54,7 @@ class MailboxAuth:
         # the password; the other falls through to the verify branch below
         # and is checked against whichever password actually won the race.
         try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, PRIVATE_FILE_MODE)
         except FileExistsError:
             pass
         else:

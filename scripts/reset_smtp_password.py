@@ -6,8 +6,8 @@ into another system's configuration.
 Only a PBKDF2 hash of the password is ever stored — this is the one and
 only time the plaintext is shown, so capture it now.
 
-The running smtp_main process/container reads credentials once at
-startup, so it must be restarted for a new password to take effect.
+The running smtpweb.smtp.main process/container reads credentials once
+at startup, so it must be restarted for a new password to take effect.
 """
 
 import argparse
@@ -15,7 +15,7 @@ import json
 import secrets
 from pathlib import Path
 
-from smtpweb.password_hashing import hash_password
+from smtpweb.common.password_hashing import hash_password
 
 DEFAULT_STATE_DIR = Path(__file__).resolve().parent.parent / "data" / "smtp"
 DEFAULT_USERNAME = "smtpweb"
@@ -56,7 +56,7 @@ def main():
     print(f"username: {username}")
     print(f"password: {password}")
     print()
-    print("This plaintext will not be shown again. Restart the smtp_main")
+    print("This plaintext will not be shown again. Restart the smtp")
     print("process/container for it to take effect.")
 
 

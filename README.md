@@ -10,8 +10,8 @@ log in and browse their own mail and attachments.
 
 ## Architecture
 
-SMTP receipt and the web UI are two independent processes — `smtpweb.smtp_main`
-and `smtpweb.web_main` — that share nothing but received mail on disk.
+SMTP receipt and the web UI are two independent processes — `smtpweb.smtp.main`
+and `smtpweb.web.main` — that share nothing but received mail on disk.
 There's no in-memory state or IPC between them: the SMTP process writes
 each message straight into `SMTPWEB_MAIL_DIR`, and the web process reads
 that same directory on every API request. Each has its own separate
@@ -27,6 +27,34 @@ all to the SMTP credentials/TLS key. This means you can expose the `smtp`
 container publicly while keeping `web` off the public network entirely,
 and a bug in either process can't be used to read or tamper with the
 other's secrets.
+
+That process boundary is also visible in the source tree, not just the
+import graph — `smtp/` and `web/` never import from each other, only from
+`common/`:
+
+```
+src/smtpweb/
+  common/          # shared by both processes
+    config.py        settings (env vars)
+    mailbox.py        recipient address validation/sanitization
+    password_hashing.py   PBKDF2 hash/verify, used by both auth systems
+    security.py       shared security-sensitive constants (file modes)
+    storage.py        EmailStorage — written by smtp/, read by web/
+    pdf_thumbnail.py   PDF first-page rendering (used by storage.py)
+    logging_config.py
+
+  smtp/            # only imported by smtp/main.py
+    main.py          entrypoint — python -m smtpweb.smtp.main
+    server.py        aiosmtpd handler (RCPT/DATA)
+    auth.py          SMTP AUTH — single service-wide credential
+    tls.py           self-signed cert for STARTTLS
+
+  web/             # only imported by web/main.py
+    main.py          entrypoint — python -m smtpweb.web.main
+    app.py           FastAPI app and routes
+    mailbox_auth.py  per-mailbox web login
+    static/          frontend (HTML/CSS/JS)
+```
 
 ## Setup
 
@@ -70,8 +98,8 @@ blocked).
 Run each process (in separate terminals):
 
 ```bash
-python -m smtpweb.smtp_main
-python -m smtpweb.web_main
+python -m smtpweb.smtp.main
+python -m smtpweb.web.main
 ```
 
 This starts:
@@ -79,7 +107,7 @@ This starts:
 - an SMTP server on `0.0.0.0:1025`
 - a web UI on `http://0.0.0.0:8080`
 
-On first run, since no SMTP credentials are configured, `smtp_main`
+On first run, since no SMTP credentials are configured, `smtpweb.smtp.main`
 generates a random SMTP username/password — see
 [Authentication](#authentication) below. Send some test emails (the
 script authenticates automatically using those generated credentials):
@@ -108,8 +136,8 @@ All settings are read from environment variables:
 | `SMTPWEB_WEB_HOST`          | `0.0.0.0`      | Web UI listen address                           |
 | `SMTPWEB_WEB_PORT`          | `8080`         | Web UI listen port                              |
 | `SMTPWEB_MAIL_DIR`          | `./data/mail`  | Received mail, one subdirectory per mailbox     |
-| `SMTPWEB_SMTP_STATE_DIR`    | `./data/smtp`  | SMTP AUTH credentials + TLS cert (smtp_main only) |
-| `SMTPWEB_WEB_STATE_DIR`     | `./data/web`   | Per-mailbox web login credentials (web_main only) |
+| `SMTPWEB_SMTP_STATE_DIR`    | `./data/smtp`  | SMTP AUTH credentials + TLS cert (smtp.main only) |
+| `SMTPWEB_WEB_STATE_DIR`     | `./data/web`   | Per-mailbox web login credentials (web.main only) |
 
 Binding to the standard SMTP port 25 requires root privileges; the default
 port 1025 avoids that for local development.
@@ -132,7 +160,7 @@ password on first run.
 Like the web mailbox passwords below, it's never stored in plaintext or
 reversibly encrypted — only a PBKDF2-HMAC-SHA256 hash + random salt is
 written to `SMTPWEB_SMTP_STATE_DIR/smtp_credentials.json` (reused on
-restart, see `src/smtpweb/password_hashing.py`). That means the plaintext
+restart, see `src/smtpweb/common/password_hashing.py`). That means the plaintext
 is only ever shown once, at the moment it's generated (in the startup
 log, or printed by the script below) — capture it then, since it can't be
 read back from that file afterward. To rotate it and print the new
@@ -142,7 +170,7 @@ plaintext password for pasting into another system's config:
 python scripts/reset_smtp_password.py
 ```
 
-This only writes the new credentials file — restart `smtp_main` (or the
+This only writes the new credentials file — restart `smtpweb.smtp.main` (or the
 `smtp` container) afterward for it to take effect. Since the certificate
 is self-signed, SMTP clients also need to skip certificate verification
 (as `scripts/send_test_emails.py` does) — this is intended for local/dev
@@ -156,7 +184,7 @@ match it. Passwords are never stored in plaintext or reversibly encrypted
 — each is a PBKDF2-HMAC-SHA256 hash with its own random salt
 (`hashlib.pbkdf2_hmac`, 310,000 iterations), written to
 `SMTPWEB_WEB_STATE_DIR/<mailbox>/credentials.json` and verified with a
-constant-time comparison (see `src/smtpweb/mailbox_auth.py`). A logged-in
+constant-time comparison (see `src/smtpweb/web/mailbox_auth.py`). A logged-in
 session (an HttpOnly cookie, held in-memory server-side) can only see mail
 in its own mailbox.
 
@@ -167,11 +195,11 @@ implemented, but the fix would be:** verify the person actually controls
 that address before letting them claim it or reset its password — e.g.
 generate a one-time code, email it to that address using the SMTP side of
 this same app, and require it back before setting a new password. See the
-docstring on `MailboxAuth` in `src/smtpweb/mailbox_auth.py` for where this
+docstring on `MailboxAuth` in `src/smtpweb/web/mailbox_auth.py` for where this
 would go.
 
 Setting only one of a pair of `SMTPWEB_SMTP_USERNAME`/`SMTPWEB_SMTP_PASSWORD`
-is treated as a misconfiguration and `smtp_main` refuses to start.
+is treated as a misconfiguration and `smtpweb.smtp.main` refuses to start.
 
 ## Docker
 
@@ -185,12 +213,12 @@ docker build -t smtpweb .
 docker run -d --name smtpweb-smtp -p 1025:1025 \
   -v "$(pwd)/data/mail:/data/mail" \
   -v "$(pwd)/data/smtp:/data/smtp" \
-  smtpweb python -m smtpweb.smtp_main
+  smtpweb python -m smtpweb.smtp.main
 
 docker run -d --name smtpweb-web -p 8080:8080 \
   -v "$(pwd)/data/mail:/data/mail:ro" \
   -v "$(pwd)/data/web:/data/web" \
-  smtpweb python -m smtpweb.web_main
+  smtpweb python -m smtpweb.web.main
 ```
 
 Or with Docker Compose, which brings both up together as one stack, each

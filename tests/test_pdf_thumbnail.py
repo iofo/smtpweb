@@ -1,4 +1,4 @@
-from smtpweb.pdf_thumbnail import generate_pdf_thumbnail
+from smtpweb.common.pdf_thumbnail import generate_pdf_thumbnail
 
 from .conftest import MINIMAL_PDF_BYTES
 
@@ -18,7 +18,7 @@ def test_generates_valid_png_thumbnail(tmp_path):
 def test_thumbnail_width_matches_target(tmp_path):
     from PIL import Image
 
-    from smtpweb.pdf_thumbnail import THUMBNAIL_MAX_WIDTH
+    from smtpweb.common.pdf_thumbnail import THUMBNAIL_MAX_WIDTH
 
     pdf_path = tmp_path / "doc.pdf"
     pdf_path.write_bytes(MINIMAL_PDF_BYTES)

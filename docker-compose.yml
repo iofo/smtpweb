@@ -2,7 +2,7 @@ services:
   smtp:
     build: .
     image: smtpweb:latest
-    command: python -m smtpweb.smtp_main
+    command: python -m smtpweb.smtp.main
     ports:
       - "1025:1025"
     volumes:
@@ -13,7 +13,7 @@ services:
   web:
     build: .
     image: smtpweb:latest
-    command: python -m smtpweb.web_main
+    command: python -m smtpweb.web.main
     ports:
       - "8080:8080"
     volumes:

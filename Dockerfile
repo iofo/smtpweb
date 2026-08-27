@@ -48,4 +48,4 @@ EXPOSE 1025 8080
 
 # One image, two entrypoints — override the command to run either process
 # (see docker-compose.yml, which runs both as separate services/containers).
-CMD ["python", "-m", "smtpweb.web_main"]
+CMD ["python", "-m", "smtpweb.web.main"]

@@ -3,9 +3,9 @@ import ssl
 
 from aiosmtpd.controller import Controller
 
-from smtpweb.auth import Authenticator
-from smtpweb.mailbox import sanitize_mailbox_name
-from smtpweb.storage import EmailStorage
+from smtpweb.smtp.auth import Authenticator
+from smtpweb.common.mailbox import sanitize_mailbox_name
+from smtpweb.common.storage import EmailStorage
 
 log = logging.getLogger(__name__)
 

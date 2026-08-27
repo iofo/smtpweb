@@ -5,8 +5,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from smtpweb.mailbox import sanitize_mailbox_name
-from smtpweb.pdf_thumbnail import generate_pdf_thumbnail
+from smtpweb.common.mailbox import sanitize_mailbox_name
+from smtpweb.common.pdf_thumbnail import generate_pdf_thumbnail
 
 
 class EmailStorage:
@@ -164,22 +164,26 @@ class EmailStorage:
         return self._email_dir(mailbox, email_id) / "raw.eml"
 
     def get_attachment_path(self, mailbox: str, email_id: str, filename: str) -> Path:
-        safe_name = Path(filename).name
-        if not safe_name or safe_name in (".", ".."):
-            raise ValueError("Invalid filename")
+        safe_name = self._safe_component(filename, "filename")
         return self._email_dir(mailbox, email_id) / "attachments" / safe_name
 
     def get_attachment_thumbnail_path(self, mailbox: str, email_id: str, filename: str) -> Path:
-        safe_name = Path(filename).name
-        if not safe_name or safe_name in (".", ".."):
-            raise ValueError("Invalid filename")
+        safe_name = self._safe_component(filename, "filename")
         return (
             self._email_dir(mailbox, email_id) / "attachments" / "thumbnails" / f"{safe_name}.png"
         )
 
     def _email_dir(self, mailbox: str, email_id: str) -> Path:
         mailbox = sanitize_mailbox_name(mailbox)
-        safe_id = Path(email_id).name
-        if not safe_id or safe_id in (".", ".."):
-            raise ValueError("Invalid email id")
+        safe_id = self._safe_component(email_id, "email id")
         return self.mail_dir / mailbox / "emails" / safe_id
+
+    @staticmethod
+    def _safe_component(value: str, label: str) -> str:
+        """Reduce a client-supplied path segment (filename or email id) to
+        its basename and reject anything that could escape the intended
+        directory once joined onto a Path."""
+        safe = Path(value).name
+        if not safe or safe in (".", ".."):
+            raise ValueError(f"Invalid {label}")
+        return safe

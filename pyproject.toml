@@ -24,8 +24,8 @@ test = [
 ]
 
 [project.scripts]
-smtpweb-smtp = "smtpweb.smtp_main:run"
-smtpweb-web = "smtpweb.web_main:run"
+smtpweb-smtp = "smtpweb.smtp.main:run"
+smtpweb-web = "smtpweb.web.main:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

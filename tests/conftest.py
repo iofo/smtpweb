@@ -3,8 +3,8 @@ from email.message import EmailMessage
 import pytest
 from aiosmtpd.smtp import Envelope
 
-from smtpweb.mailbox_auth import MailboxAuth
-from smtpweb.storage import EmailStorage
+from smtpweb.web.mailbox_auth import MailboxAuth
+from smtpweb.common.storage import EmailStorage
 from smtpweb.web.app import create_app
 
 # A real, minimal-but-valid single-page PDF (the classic minimal-PDF

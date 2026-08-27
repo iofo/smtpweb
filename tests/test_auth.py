@@ -3,8 +3,8 @@ import json
 import pytest
 from aiosmtpd.smtp import LoginPassword
 
-from smtpweb.auth import Authenticator, resolve_credentials
-from smtpweb.password_hashing import hash_password
+from smtpweb.smtp.auth import Authenticator, resolve_credentials
+from smtpweb.common.password_hashing import hash_password
 
 ENV_NAMES = ("SMTPWEB_SMTP_USERNAME", "SMTPWEB_SMTP_PASSWORD")
 
@@ -71,7 +71,7 @@ class TestResolveCredentials:
         assert new_password is None
         assert not (tmp_path / "creds.json").exists()
         # The record must verify the real password and be a hash, not it.
-        from smtpweb.password_hashing import verify_password
+        from smtpweb.common.password_hashing import verify_password
 
         assert verify_password("envpass", record)
         assert "envpass" not in json.dumps(record)
@@ -113,7 +113,7 @@ class TestResolveCredentials:
         # Loading a pre-existing file never yields the plaintext back.
         assert new_password is None
 
-        from smtpweb.password_hashing import verify_password
+        from smtpweb.common.password_hashing import verify_password
 
         assert verify_password("existing-pw", record)
 

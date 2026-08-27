@@ -8,6 +8,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+from smtpweb.common.security import PRIVATE_FILE_MODE
+
+RSA_KEY_SIZE = 2048
+CERT_BACKDATE_DAYS = 1  # avoids "not yet valid" from clock skew between hosts
+CERT_VALIDITY_DAYS = 825  # CA/Browser Forum's historical max cert lifetime
+
 
 def ensure_self_signed_cert(cert_dir: Path) -> tuple[Path, Path]:
     """Return (cert_path, key_path) under cert_dir, generating a self-signed
@@ -18,7 +24,7 @@ def ensure_self_signed_cert(cert_dir: Path) -> tuple[Path, Path]:
     if cert_path.exists() and key_path.exists():
         return cert_path, key_path
 
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=RSA_KEY_SIZE)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "smtpweb-local")])
     now = datetime.datetime.now(datetime.timezone.utc)
     cert = (
@@ -27,8 +33,8 @@ def ensure_self_signed_cert(cert_dir: Path) -> tuple[Path, Path]:
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(days=1))
-        .not_valid_after(now + datetime.timedelta(days=825))
+        .not_valid_before(now - datetime.timedelta(days=CERT_BACKDATE_DAYS))
+        .not_valid_after(now + datetime.timedelta(days=CERT_VALIDITY_DAYS))
         .add_extension(
             x509.SubjectAlternativeName(
                 [x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
@@ -45,7 +51,7 @@ def ensure_self_signed_cert(cert_dir: Path) -> tuple[Path, Path]:
             encryption_algorithm=serialization.NoEncryption(),
         )
     )
-    key_path.chmod(0o600)
+    key_path.chmod(PRIVATE_FILE_MODE)
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     return cert_path, key_path
 

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from smtpweb.config import Settings
+from smtpweb.common.config import Settings
 
 
 def test_defaults_when_unset(monkeypatch):

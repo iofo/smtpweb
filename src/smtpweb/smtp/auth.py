@@ -5,7 +5,8 @@ from pathlib import Path
 
 from aiosmtpd.smtp import AuthResult, LoginPassword
 
-from smtpweb.password_hashing import hash_password, verify_password
+from smtpweb.common.password_hashing import hash_password, verify_password
+from smtpweb.common.security import PRIVATE_FILE_MODE
 
 
 class Authenticator:
@@ -67,5 +68,5 @@ def resolve_credentials(
     record = {"username": username, **hash_password(password)}
     creds_path.parent.mkdir(parents=True, exist_ok=True)
     creds_path.write_text(json.dumps(record, indent=2))
-    creds_path.chmod(0o600)
+    creds_path.chmod(PRIVATE_FILE_MODE)
     return username, record, True, password

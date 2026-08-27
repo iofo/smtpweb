@@ -275,3 +275,11 @@ class TestUnauthenticatedAccessBlocked:
 
     def test_attachment_requires_session(self, app_client):
         assert app_client.get("/api/emails/some-id/attachments/f.txt").status_code == 401
+
+    def test_openapi_docs_are_disabled(self, app_client):
+        """Regression test: FastAPI's auto-generated /docs, /redoc, and
+        /openapi.json are the one thing that would otherwise be reachable
+        with no session at all, handing an anonymous visitor the full API
+        surface — see docs_url=None in create_app()."""
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            assert app_client.get(path).status_code == 404, path

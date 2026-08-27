@@ -9,8 +9,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from smtpweb.mailbox_auth import MailboxAuth
-from smtpweb.storage import EmailStorage
+from smtpweb.web.mailbox_auth import MailboxAuth
+from smtpweb.common.storage import EmailStorage
 
 STATIC_DIR = Path(__file__).parent / "static"
 SESSION_COOKIE = "smtpweb_session"
@@ -33,6 +33,10 @@ INLINE_SAFE_MEDIA_TYPES = {
     "text/plain",
 }
 
+# Applied to every file response — same rationale as INLINE_SAFE_MEDIA_TYPES:
+# never let a browser's content-sniffing override our declared media type.
+SECURITY_HEADERS = {"X-Content-Type-Options": "nosniff"}
+
 
 class LoginPayload(BaseModel):
     username: str
@@ -40,7 +44,10 @@ class LoginPayload(BaseModel):
 
 
 def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
-    app = FastAPI(title="smtpweb")
+    # docs_url/redoc_url/openapi_url disabled: this app has no open/anonymous
+    # mode anywhere else, and the auto-generated API docs would otherwise be
+    # the one unauthenticated thing exposing the full route/schema surface.
+    app = FastAPI(title="smtpweb", docs_url=None, redoc_url=None, openapi_url=None)
     # token -> (mailbox, expires_at). Expired entries are evicted lazily
     # (on lookup) and swept opportunistically (on login), since nothing
     # else ever removes a session that its owner never logs out of.
@@ -132,7 +139,7 @@ def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
             media_type=media_type,
             filename=path.name,
             content_disposition_type=disposition,
-            headers={"X-Content-Type-Options": "nosniff"},
+            headers=SECURITY_HEADERS,
         )
 
     @app.get("/api/emails/{email_id}/attachments/{filename}/thumbnail")
@@ -150,7 +157,7 @@ def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
             media_type="image/png",
             filename=path.name,
             content_disposition_type="inline",
-            headers={"X-Content-Type-Options": "nosniff"},
+            headers=SECURITY_HEADERS,
         )
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

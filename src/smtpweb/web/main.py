@@ -2,10 +2,10 @@ import logging
 
 import uvicorn
 
-from smtpweb.config import Settings
-from smtpweb.logging_config import configure_logging
-from smtpweb.mailbox_auth import MailboxAuth
-from smtpweb.storage import EmailStorage
+from smtpweb.common.config import Settings
+from smtpweb.common.logging_config import configure_logging
+from smtpweb.web.mailbox_auth import MailboxAuth
+from smtpweb.common.storage import EmailStorage
 from smtpweb.web.app import create_app
 
 log = logging.getLogger(__name__)

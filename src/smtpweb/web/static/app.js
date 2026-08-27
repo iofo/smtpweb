@@ -1,4 +1,5 @@
 const appEl = document.getElementById("app");
+const POLL_INTERVAL_MS = 10000;
 let currentUsername = null;
 let selectedId = null;
 let refreshTimer = null;
@@ -181,7 +182,7 @@ function renderInbox() {
   });
 
   loadList();
-  refreshTimer = setInterval(loadList, 10000);
+  refreshTimer = setInterval(loadList, POLL_INTERVAL_MS);
 }
 
 function openLightbox(type, url, name) {

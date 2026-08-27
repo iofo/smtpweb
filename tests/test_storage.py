@@ -140,7 +140,7 @@ def test_duplicate_attachment_filenames_are_deduped(storage):
 
 
 def test_mail_dir_created_on_init(tmp_path):
-    from smtpweb.storage import EmailStorage
+    from smtpweb.common.storage import EmailStorage
 
     mail_dir = tmp_path / "does" / "not" / "exist" / "yet"
     EmailStorage(mail_dir)

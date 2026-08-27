@@ -1,6 +1,6 @@
 import pytest
 
-from smtpweb.mailbox import sanitize_mailbox_name
+from smtpweb.common.mailbox import sanitize_mailbox_name
 
 
 @pytest.mark.parametrize(
