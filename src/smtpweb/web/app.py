@@ -1,7 +1,10 @@
+import base64
+import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.requests import Request
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from smtpweb.storage import EmailStorage
@@ -9,8 +12,28 @@ from smtpweb.storage import EmailStorage
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def create_app(storage: EmailStorage) -> FastAPI:
+def create_app(storage: EmailStorage, username: str, password: str) -> FastAPI:
     app = FastAPI(title="smtpweb")
+    username_bytes = username.encode("utf-8")
+    password_bytes = password.encode("utf-8")
+
+    @app.middleware("http")
+    async def require_basic_auth(request: Request, call_next):
+        header = request.headers.get("authorization", "")
+        if header.lower().startswith("basic "):
+            try:
+                decoded = base64.b64decode(header[6:]).decode("utf-8")
+                supplied_user, _, supplied_pass = decoded.partition(":")
+            except Exception:
+                supplied_user, supplied_pass = "", ""
+            user_ok = secrets.compare_digest(supplied_user.encode("utf-8"), username_bytes)
+            pass_ok = secrets.compare_digest(supplied_pass.encode("utf-8"), password_bytes)
+            if user_ok and pass_ok:
+                return await call_next(request)
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="smtpweb"'},
+        )
 
     @app.get("/api/emails")
     def list_emails():

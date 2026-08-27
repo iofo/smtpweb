@@ -15,7 +15,8 @@ dependencies = [
 ]
 
 [project.scripts]
-smtpweb = "smtpweb.main:run"
+smtpweb-smtp = "smtpweb.smtp_main:run"
+smtpweb-web = "smtpweb.web_main:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

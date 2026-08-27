@@ -1,13 +1,12 @@
 import logging
-
-import uvicorn
+import signal
+import threading
 
 from smtpweb.auth import Authenticator, resolve_credentials
 from smtpweb.config import Settings
 from smtpweb.smtp_server import build_controller
 from smtpweb.storage import EmailStorage
 from smtpweb.tls import build_tls_context, ensure_self_signed_cert
-from smtpweb.web.app import create_app
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +21,11 @@ def run():
 
     creds_path = settings.data_dir.parent / "smtp_credentials.json"
     username, password, generated = resolve_credentials(
-        creds_path, settings.smtp_username, settings.smtp_password
+        creds_path,
+        settings.smtp_username,
+        settings.smtp_password,
+        ("SMTPWEB_SMTP_USERNAME", "SMTPWEB_SMTP_PASSWORD"),
+        default_username="smtpweb",
     )
     authenticator = Authenticator(username, password)
 
@@ -47,11 +50,11 @@ def run():
         )
     log.info("Storing emails under %s", settings.data_dir.resolve())
 
-    try:
-        log.info("Web UI listening on %s:%s", settings.web_host, settings.web_port)
-        uvicorn.run(create_app(storage), host=settings.web_host, port=settings.web_port)
-    finally:
-        controller.stop()
+    stop_event = threading.Event()
+    signal.signal(signal.SIGTERM, lambda signum, frame: stop_event.set())
+    signal.signal(signal.SIGINT, lambda signum, frame: stop_event.set())
+    stop_event.wait()
+    controller.stop()
 
 
 if __name__ == "__main__":

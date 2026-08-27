@@ -8,6 +8,18 @@ attachments.
 - Web backend: [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/)
 - Frontend: static HTML/CSS/vanilla JS served by FastAPI
 
+## Architecture
+
+SMTP receipt and the web UI are two independent processes/services —
+`smtpweb.smtp_main` and `smtpweb.web_main` — that share nothing but the
+data directory on disk. There's no in-memory state or IPC between them:
+the SMTP process writes each message straight to `SMTPWEB_DATA_DIR`, and
+the web process reads that same directory on every API request. Each has
+its own separate authentication (see below), so a compromise of one
+doesn't hand over the other's credentials, and in Docker they run as two
+separate containers so you can expose SMTP publicly while keeping the web
+UI off the public network.
+
 ## Setup
 
 Requires Python 3.10+.
@@ -21,8 +33,11 @@ pip install -e .
 
 ## Running
 
+Run each process (in separate terminals):
+
 ```bash
-python -m smtpweb.main
+python -m smtpweb.smtp_main
+python -m smtpweb.web_main
 ```
 
 This starts:
@@ -30,16 +45,17 @@ This starts:
 - an SMTP server on `0.0.0.0:1025`
 - a web UI on `http://0.0.0.0:8080`
 
-On first run, since no credentials are configured, it generates a random
-SMTP username/password and prints where they were saved — see
-[Authentication](#authentication) below. Send it some test emails (the
-script authenticates automatically using those generated credentials):
+On first run, since no credentials are configured, each process generates
+its own random username/password and prints where they were saved — see
+[Authentication](#authentication) below. Send some test emails (the
+script authenticates automatically using the generated SMTP credentials):
 
 ```bash
 python scripts/send_test_emails.py
 ```
 
-Then open `http://127.0.0.1:8080` to see them in the inbox.
+Then open `http://127.0.0.1:8080` and log in with the generated web
+credentials (from `data/web_credentials.json`) to see them in the inbox.
 
 ## Configuration
 
@@ -53,6 +69,8 @@ All settings are read from environment variables:
 | `SMTPWEB_SMTP_PASSWORD`  | *(generated)*    | SMTP AUTH password                 |
 | `SMTPWEB_WEB_HOST`       | `0.0.0.0`        | Web UI listen address              |
 | `SMTPWEB_WEB_PORT`       | `8080`           | Web UI listen port                 |
+| `SMTPWEB_WEB_USERNAME`   | *(generated)*    | Web UI Basic Auth username         |
+| `SMTPWEB_WEB_PASSWORD`   | *(generated)*    | Web UI Basic Auth password         |
 | `SMTPWEB_DATA_DIR`       | `./data/emails`  | Directory emails are stored under  |
 
 Binding to the standard SMTP port 25 requires root privileges; the default
@@ -60,46 +78,66 @@ port 1025 avoids that for local development.
 
 ## Authentication
 
-The SMTP server always requires `AUTH`, over `STARTTLS` only — there is no
-open-relay mode. On startup it presents a self-signed TLS certificate,
-auto-generated on first run and cached at `<data_dir>/../tls/` (reused on
-restart).
+Both processes require auth, and neither has an open/anonymous mode:
 
-Credentials work the same way: set both `SMTPWEB_SMTP_USERNAME` and
-`SMTPWEB_SMTP_PASSWORD` to use your own, or leave both unset and the server
-generates a random password on first run and writes it to
-`<data_dir>/../smtp_credentials.json` (reused on restart, so it survives
-container restarts as long as the data volume persists). Check the startup
-log or that file for the generated username/password.
+**SMTP** always requires `AUTH`, over `STARTTLS` only. On startup it
+presents a self-signed TLS certificate, auto-generated on first run and
+cached at `<data_dir>/../tls/` (reused on restart). Set both
+`SMTPWEB_SMTP_USERNAME` and `SMTPWEB_SMTP_PASSWORD` to use your own
+credentials, or leave both unset and the server generates a random
+password on first run, writing it to `<data_dir>/../smtp_credentials.json`
+(reused on restart). Since the certificate is self-signed, SMTP clients
+need to skip certificate verification (as `scripts/send_test_emails.py`
+does) — this is intended for local/dev use; put a trusted TLS-terminating
+proxy in front for production.
 
-Since the certificate is self-signed, SMTP clients need to skip certificate
-verification (as `scripts/send_test_emails.py` does) — this is intended for
-local/dev use; put a trusted TLS-terminating proxy in front for production.
+**Web UI** always requires HTTP Basic Auth on every route, including the
+static UI itself. Set both `SMTPWEB_WEB_USERNAME` and
+`SMTPWEB_WEB_PASSWORD` to use your own credentials, or leave both unset
+and the server generates a random password on first run, writing it to
+`<data_dir>/../web_credentials.json` (reused on restart). Basic Auth over
+plain HTTP still sends credentials base64-encoded, not encrypted — put a
+TLS-terminating reverse proxy in front before exposing this beyond
+localhost/a trusted network.
+
+Setting only one of a pair of username/password env vars (for either
+service) is treated as a misconfiguration and the process refuses to
+start.
 
 ## Docker
 
+Each container runs one process from the same image, selected by
+overriding the command:
+
 ```bash
 docker build -t smtpweb .
-docker run -d --name smtpweb \
-  -p 1025:1025 -p 8080:8080 \
-  -v smtpweb-data:/data \
-  smtpweb
+docker run -d --name smtpweb-smtp -p 1025:1025 -v "$(pwd)/data:/data" \
+  smtpweb python -m smtpweb.smtp_main
+docker run -d --name smtpweb-web -p 8080:8080 -v "$(pwd)/data:/data" \
+  smtpweb python -m smtpweb.web_main
 ```
 
-Emails are stored at `/data/emails` inside the container (`SMTPWEB_DATA_DIR`);
-mount a volume there to persist them across container restarts.
-
-Or with Docker Compose:
+Or with Docker Compose, which brings both up together as one stack, each
+in its own container, sharing `./data`:
 
 ```bash
 docker compose up -d --build
 ```
 
+Emails and credential/cert files are stored under `/data` inside each
+container (`SMTPWEB_DATA_DIR=/data/emails`); the compose file bind-mounts
+`./data` so you can inspect them on the host while the containers run.
+
+For a real deployment, only the `smtp` service needs to be reachable from
+the public internet — keep the `web` service on an internal network or
+behind a VPN/proxy, since it's the one with no built-in TLS.
+
 ## Storage layout
 
-Each received email is stored in its own directory under `SMTPWEB_DATA_DIR`:
-
 ```
+<data_dir>/../smtp_credentials.json   # SMTP AUTH credentials, if auto-generated
+<data_dir>/../web_credentials.json    # web UI Basic Auth credentials, if auto-generated
+<data_dir>/../tls/cert.pem, key.pem   # self-signed cert used for SMTP STARTTLS
 <data_dir>/<email-id>/
   raw.eml              # the full original message
   metadata.json         # parsed headers, recipients, attachment index
@@ -109,6 +147,8 @@ Each received email is stored in its own directory under `SMTPWEB_DATA_DIR`:
 ```
 
 ## API
+
+All routes below require HTTP Basic Auth (see [Authentication](#authentication)).
 
 - `GET /api/emails` — list received emails (metadata only)
 - `GET /api/emails/{id}` — full detail, including body text/html

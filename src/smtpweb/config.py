@@ -11,4 +11,6 @@ class Settings:
     smtp_password: str | None = os.environ.get("SMTPWEB_SMTP_PASSWORD")
     web_host: str = os.environ.get("SMTPWEB_WEB_HOST", "0.0.0.0")
     web_port: int = int(os.environ.get("SMTPWEB_WEB_PORT", "8080"))
+    web_username: str | None = os.environ.get("SMTPWEB_WEB_USERNAME")
+    web_password: str | None = os.environ.get("SMTPWEB_WEB_PASSWORD")
     data_dir: Path = Path(os.environ.get("SMTPWEB_DATA_DIR", "./data/emails"))

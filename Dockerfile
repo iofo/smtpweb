@@ -26,4 +26,6 @@ ENV SMTPWEB_DATA_DIR=/data/emails \
 VOLUME ["/data"]
 EXPOSE 1025 8080
 
-CMD ["python", "-m", "smtpweb.main"]
+# One image, two entrypoints — override the command to run either process
+# (see docker-compose.yml, which runs both as separate services/containers).
+CMD ["python", "-m", "smtpweb.web_main"]

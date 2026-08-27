@@ -25,16 +25,21 @@ class Authenticator:
 
 
 def resolve_credentials(
-    creds_path: Path, env_username: str | None, env_password: str | None
+    creds_path: Path,
+    env_username: str | None,
+    env_password: str | None,
+    env_var_names: tuple[str, str],
+    default_username: str,
 ) -> tuple[str, str, bool]:
     """Return (username, password, generated). If both env vars are set,
     use them. If only one is set, that's a misconfiguration. Otherwise
     reuse or generate random credentials persisted at creds_path."""
+    env_username_name, env_password_name = env_var_names
     if env_username and env_password:
         return env_username, env_password, False
     if env_username or env_password:
         raise RuntimeError(
-            "Set both SMTPWEB_SMTP_USERNAME and SMTPWEB_SMTP_PASSWORD, or neither "
+            f"Set both {env_username_name} and {env_password_name}, or neither "
             "(to auto-generate credentials)."
         )
 
@@ -42,7 +47,7 @@ def resolve_credentials(
         data = json.loads(creds_path.read_text())
         return data["username"], data["password"], True
 
-    username = "smtpweb"
+    username = default_username
     password = secrets.token_urlsafe(24)
     creds_path.parent.mkdir(parents=True, exist_ok=True)
     creds_path.write_text(json.dumps({"username": username, "password": password}, indent=2))

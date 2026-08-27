@@ -1,8 +1,19 @@
 services:
-  smtpweb:
+  smtp:
     build: .
+    image: smtpweb:latest
+    command: python -m smtpweb.smtp_main
     ports:
       - "1025:1025"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  web:
+    build: .
+    image: smtpweb:latest
+    command: python -m smtpweb.web_main
+    ports:
       - "8080:8080"
     volumes:
       - ./data:/data
