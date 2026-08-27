@@ -30,25 +30,13 @@ This starts:
 - an SMTP server on `0.0.0.0:1025`
 - a web UI on `http://0.0.0.0:8080`
 
-Send it a test email:
+Send it some test emails:
 
 ```bash
-python - <<'EOF'
-import smtplib
-from email.message import EmailMessage
-
-msg = EmailMessage()
-msg["From"] = "alice@example.com"
-msg["To"] = "bob@example.com"
-msg["Subject"] = "Hello"
-msg.set_content("This is a test.")
-
-with smtplib.SMTP("127.0.0.1", 1025) as s:
-    s.send_message(msg)
-EOF
+python scripts/send_test_emails.py
 ```
 
-Then open `http://127.0.0.1:8080` to see it in the inbox.
+Then open `http://127.0.0.1:8080` to see them in the inbox.
 
 ## Configuration
 
