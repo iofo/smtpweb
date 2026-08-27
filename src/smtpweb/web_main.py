@@ -3,6 +3,7 @@ import logging
 import uvicorn
 
 from smtpweb.config import Settings
+from smtpweb.logging_config import configure_logging
 from smtpweb.mailbox_auth import MailboxAuth
 from smtpweb.storage import EmailStorage
 from smtpweb.web.app import create_app
@@ -11,9 +12,7 @@ log = logging.getLogger(__name__)
 
 
 def run():
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
 
     settings = Settings()
     storage = EmailStorage(settings.mail_dir)

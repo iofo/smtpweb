@@ -4,6 +4,7 @@ import threading
 
 from smtpweb.auth import Authenticator, resolve_credentials
 from smtpweb.config import Settings
+from smtpweb.logging_config import configure_logging
 from smtpweb.smtp_server import build_controller
 from smtpweb.storage import EmailStorage
 from smtpweb.tls import build_tls_context, ensure_self_signed_cert
@@ -12,9 +13,7 @@ log = logging.getLogger(__name__)
 
 
 def run():
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
 
     settings = Settings()
     storage = EmailStorage(settings.mail_dir)
