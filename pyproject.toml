@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smtpweb"
+version = "0.1.0"
+description = "SMTP server that stores received emails on the filesystem, with a web UI to browse them."
+requires-python = ">=3.10"
+dependencies = [
+    "aiosmtpd>=1.4.6",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+]
+
+[project.scripts]
+smtpweb = "smtpweb.main:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
