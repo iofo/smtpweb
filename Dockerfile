@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -11,6 +11,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir .
+
+
+# `docker build --target test -t smtpweb:test . && docker run --rm smtpweb:test`
+# Runs pytest against the actual packaged install (catches issues an
+# editable dev install wouldn't, e.g. missing package-data). Not part of
+# the default build target, so it never ships in the production image.
+FROM base AS test
+
+COPY requirements-test.txt ./
+RUN pip install --no-cache-dir -r requirements-test.txt
+COPY tests ./tests
+CMD ["pytest"]
+
+
+FROM base AS final
 
 RUN useradd --create-home --uid 1000 smtpweb \
     && mkdir -p /data/mail /data/smtp/tls /data/web \

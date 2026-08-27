@@ -47,6 +47,15 @@ pip install -e ".[test]"
 pytest
 ```
 
+Or in Docker, against the actual packaged (non-editable) install — the
+`test` build stage isn't part of the default build target, so it never
+ends up in the production image:
+
+```bash
+docker build --target test -t smtpweb:test .
+docker run --rm smtpweb:test
+```
+
 The suite (`tests/`) is unit/integration-level and doesn't touch the real
 `./data` directory — every test uses a fresh `tmp_path`. Coverage
 includes mailbox address sanitization/path-traversal, password hashing
