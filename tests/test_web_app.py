@@ -266,6 +266,55 @@ class TestPdfThumbnail:
         assert response.status_code == 404
 
 
+class TestDeleteEmail:
+    def test_delete_removes_email(self, app_client, storage):
+        results = storage.save_message(make_envelope(rcpt_tos=("bob@example.com",)))
+        email_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.delete(f"/api/emails/{email_id}")
+        assert response.status_code == 204
+
+        assert app_client.get(f"/api/emails/{email_id}").status_code == 404
+        assert app_client.get("/api/emails").json() == []
+
+    def test_delete_nonexistent_email_404s(self, app_client):
+        login(app_client, "bob@example.com", "bobs-password")
+        response = app_client.delete("/api/emails/00000000-0000-0000-0000-000000000000")
+        assert response.status_code == 404
+
+    def test_delete_requires_session(self, app_client):
+        assert app_client.delete("/api/emails/some-id").status_code == 401
+
+    def test_cannot_delete_another_mailboxes_email(self, app_client, storage):
+        """The critical case: a mailbox must not be able to delete an
+        email it can't even see, by guessing another mailbox's id."""
+        results = storage.save_message(make_envelope(rcpt_tos=("bob@example.com",)))
+        email_id = results[0]["id"]
+
+        login(app_client, "eve@example.com", "eves-password")
+        response = app_client.delete(f"/api/emails/{email_id}")
+        assert response.status_code == 404
+
+        # Bob's copy must be untouched.
+        app_client.cookies.clear()
+        login(app_client, "bob@example.com", "bobs-password")
+        assert app_client.get(f"/api/emails/{email_id}").status_code == 200
+
+    def test_deleting_shared_message_only_removes_callers_copy(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(rcpt_tos=("bob@example.com", "eve@example.com"))
+        )
+        shared_id = results[0]["id"]
+
+        login(app_client, "bob@example.com", "bobs-password")
+        assert app_client.delete(f"/api/emails/{shared_id}").status_code == 204
+
+        app_client.cookies.clear()
+        login(app_client, "eve@example.com", "eves-password")
+        assert app_client.get(f"/api/emails/{shared_id}").status_code == 200
+
+
 class TestUnauthenticatedAccessBlocked:
     def test_emails_list_requires_session(self, app_client):
         assert app_client.get("/api/emails").status_code == 401

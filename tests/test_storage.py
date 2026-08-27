@@ -210,3 +210,66 @@ def test_mail_dir_created_on_init(tmp_path):
     mail_dir = tmp_path / "does" / "not" / "exist" / "yet"
     EmailStorage(mail_dir)
     assert mail_dir.is_dir()
+
+
+def test_delete_email_removes_everything(storage, mail_dir):
+    results = storage.save_message(
+        make_envelope(
+            rcpt_tos=("bob@example.com",),
+            attachments=[("scan.pdf", "application/pdf", MINIMAL_PDF_BYTES)],
+        )
+    )
+    meta = results[0]
+    email_dir = mail_dir / "bob@example.com" / "emails" / meta["id"]
+    assert email_dir.exists()
+
+    storage.delete_email("bob@example.com", meta["id"])
+
+    assert not email_dir.exists()
+    assert storage.list_emails("bob@example.com") == []
+
+
+def test_delete_email_missing_id_raises(storage):
+    storage.save_message(make_envelope(rcpt_tos=("bob@example.com",)))
+    with pytest.raises(FileNotFoundError):
+        storage.delete_email("bob@example.com", "00000000-0000-0000-0000-000000000000")
+
+
+def test_delete_email_only_affects_target_email(storage):
+    results = storage.save_message(make_envelope(subject="keep me"))
+    keep_id = results[0]["id"]
+    results = storage.save_message(make_envelope(subject="delete me"))
+    delete_id = results[0]["id"]
+
+    storage.delete_email("bob@example.com", delete_id)
+
+    remaining = storage.list_emails("bob@example.com")
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == keep_id
+    with pytest.raises(FileNotFoundError):
+        storage.get_email("bob@example.com", delete_id)
+
+
+def test_delete_email_does_not_affect_other_mailboxes(storage):
+    results = storage.save_message(make_envelope(rcpt_tos=("bob@example.com", "eve@example.com")))
+    shared_id = results[0]["id"]
+
+    storage.delete_email("bob@example.com", shared_id)
+
+    assert storage.list_emails("bob@example.com") == []
+    assert len(storage.list_emails("eve@example.com")) == 1
+
+
+def test_delete_email_invalidates_list_cache(storage):
+    """Regression test for the mtime-based list_emails() cache: a
+    deletion must be visible on the very next call, the same way a new
+    message is (see test_list_emails_cache_invalidates_on_new_message)."""
+    storage.save_message(make_envelope(subject="first"))
+    results = storage.save_message(make_envelope(subject="second"))
+    assert len(storage.list_emails("bob@example.com")) == 2
+
+    storage.delete_email("bob@example.com", results[0]["id"])
+
+    remaining = storage.list_emails("bob@example.com")
+    assert len(remaining) == 1
+    assert remaining[0]["subject"] == "first"

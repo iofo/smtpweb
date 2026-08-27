@@ -17,6 +17,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data/mail:/data/mail:ro
+      - ./data/mail:/data/mail
       - ./data/web:/data/web
     restart: unless-stopped

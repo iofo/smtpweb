@@ -16,7 +16,9 @@ class Settings:
     web_host: str = field(default_factory=lambda: os.environ.get("SMTPWEB_WEB_HOST", "0.0.0.0"))
     web_port: int = field(default_factory=lambda: int(os.environ.get("SMTPWEB_WEB_PORT", "8080")))
     # Shared: received mail, one subdirectory per recipient mailbox.
-    # Mount read-write for smtp_main, read-only for web_main.
+    # Read-write for both processes — smtp_main only ever creates new
+    # <email-id> directories and never touches one again afterward, so
+    # there's no write/write race with web_main deleting an existing one.
     mail_dir: Path = field(
         default_factory=lambda: Path(os.environ.get("SMTPWEB_MAIL_DIR", "./data/mail"))
     )
@@ -25,8 +27,9 @@ class Settings:
     smtp_state_dir: Path = field(
         default_factory=lambda: Path(os.environ.get("SMTPWEB_SMTP_STATE_DIR", "./data/smtp"))
     )
-    # web_main-only: per-mailbox web login credentials. Not needed by, and
-    # should not be mounted into, the smtp process.
+    # web_main-only: per-mailbox web login credentials + its own TLS
+    # cert/key. Not needed by, and should not be mounted into, the smtp
+    # process.
     web_state_dir: Path = field(
         default_factory=lambda: Path(os.environ.get("SMTPWEB_WEB_STATE_DIR", "./data/web"))
     )

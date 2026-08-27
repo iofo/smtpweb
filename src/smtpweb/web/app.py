@@ -142,6 +142,13 @@ def create_app(storage: EmailStorage, mailbox_auth: MailboxAuth) -> FastAPI:
             headers=SECURITY_HEADERS,
         )
 
+    @app.delete("/api/emails/{email_id}", status_code=204)
+    def delete_email(email_id: str, mailbox: str = Depends(require_session)):
+        try:
+            storage.delete_email(mailbox, email_id)
+        except (FileNotFoundError, ValueError):
+            raise HTTPException(404, "Email not found")
+
     @app.get("/api/emails/{email_id}/attachments/{filename}/thumbnail")
     def get_attachment_thumbnail(
         email_id: str, filename: str, mailbox: str = Depends(require_session)

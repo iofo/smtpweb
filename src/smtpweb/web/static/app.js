@@ -12,6 +12,7 @@ const ICONS = {
   paperclip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
   download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>`,
   close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>`,
+  trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
 };
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
@@ -240,6 +241,31 @@ async function loadList() {
   }
 }
 
+async function deleteEmail(id) {
+  if (!confirm("Delete this email? This cannot be undone.")) return;
+
+  const res = await fetch(`/api/emails/${id}`, { method: "DELETE" });
+  if (res.status === 401) {
+    renderLogin();
+    return;
+  }
+  if (!res.ok) {
+    alert("Failed to delete email.");
+    return;
+  }
+
+  if (selectedId === id) {
+    selectedId = null;
+    document.getElementById("detail-pane").innerHTML = `
+      <div class="placeholder-state">
+        ${ICONS.mailOpen}
+        <p>Select an email to view it.</p>
+      </div>
+    `;
+  }
+  loadList();
+}
+
 async function selectEmail(id) {
   selectedId = id;
   document.querySelectorAll("#email-list li").forEach((li) => {
@@ -315,7 +341,10 @@ async function selectEmail(id) {
   }
 
   detailEl.innerHTML = `
-    <h2>${escapeHtml(email.subject || "(no subject)")}</h2>
+    <div class="detail-header">
+      <h2>${escapeHtml(email.subject || "(no subject)")}</h2>
+      <button class="btn btn-icon" id="delete-email" title="Delete">${ICONS.trash}</button>
+    </div>
     <div class="meta">
       <span class="label">From</span><span class="value">${escapeHtml(email.from || "")}</span>
       <span class="label">To</span><span class="value">${escapeHtml((email.to || []).join(", "))}</span>
@@ -325,6 +354,8 @@ async function selectEmail(id) {
     ${bodyHtml}
     <a class="raw-link" href="/api/emails/${id}/raw">${ICONS.download} Download raw .eml</a>
   `;
+
+  document.getElementById("delete-email").addEventListener("click", () => deleteEmail(id));
 
   detailEl.querySelectorAll(".image-attachment").forEach((el) => {
     const open = () => openLightbox(el.dataset.type, el.dataset.url, el.dataset.name);

@@ -21,12 +21,18 @@ compromise of one doesn't hand over the other's secrets.
 In Docker they run as two separate containers with **separate volume
 mounts**, not just separate processes: the `smtp` container can read/write
 mail and its own SMTP AUTH credentials/TLS key, but has no access at all
-to the web login credentials; the `web` container can read/write web login
-credentials, but only has **read-only** access to mail, and no access at
-all to the SMTP credentials/TLS key. This means you can expose the `smtp`
-container publicly while keeping `web` off the public network entirely,
-and a bug in either process can't be used to read or tamper with the
-other's secrets.
+to the web login credentials; the `web` container can read/write web
+login credentials and its own TLS key, and also has read/write access to
+mail (needed so it can delete emails — see [API](#api)) but still no
+access at all to the SMTP credentials/TLS key. This means you can expose
+the `smtp` container publicly while keeping `web` off the public network
+entirely, and a bug in either process still can't read or tamper with
+the other's secrets.
+
+Mail being read-write from both containers is safe rather than a race
+condition waiting to happen: `smtp_main` only ever creates a new
+`<email-id>` directory and never touches it again afterward, so there's
+no write/write conflict with `web_main` later deleting one.
 
 That process boundary is also visible in the source tree, not just the
 import graph — `smtp/` and `web/` never import from each other, only from
@@ -105,7 +111,7 @@ python -m smtpweb.web.main
 This starts:
 
 - an SMTP server on `0.0.0.0:1025`
-- a web UI on `http://0.0.0.0:8080`
+- a web UI on `https://0.0.0.0:8080` (self-signed cert — see [Authentication](#authentication))
 
 On first run, since no SMTP credentials are configured, `smtpweb.smtp.main`
 generates a random SMTP username/password — see
@@ -117,7 +123,9 @@ python scripts/send_test_emails.py
 ```
 
 This delivers mail to `bob@example.com` and `eve@example.com`. Open
-`http://127.0.0.1:8080` and log in as `bob@example.com` with any password
+`https://127.0.0.1:8080` (your browser will warn about the self-signed
+certificate — proceed anyway for local use) and log in as
+`bob@example.com` with any password
 you like — since that mailbox has never been logged into before, that
 password is now set as `bob@example.com`'s password, and you'll see his
 mail. Logging in as `eve@example.com` the same way gives you a separate
@@ -186,17 +194,26 @@ match it. Passwords are never stored in plaintext or reversibly encrypted
 `SMTPWEB_WEB_STATE_DIR/<mailbox>/credentials.json` and verified with a
 constant-time comparison (see `src/smtpweb/web/mailbox_auth.py`). A logged-in
 session (an HttpOnly cookie, held in-memory server-side) can only see mail
-in its own mailbox.
+in its own mailbox. `web_main` also serves HTTPS directly (like the SMTP
+side, with a self-signed certificate auto-generated on first run and
+cached at `SMTPWEB_WEB_STATE_DIR/tls/`), so browsers will warn on first
+visit — the same "skip verification" caveat as SMTP applies; for
+anything beyond local/dev use, put a trusted TLS-terminating proxy in
+front instead of relying on this cert.
 
-Because claiming a mailbox requires nothing but knowing the address, this
-is only appropriate for a server that isn't exposed to the internet —
-anyone who knows/guesses an address could claim it first. **This is not
-implemented, but the fix would be:** verify the person actually controls
-that address before letting them claim it or reset its password — e.g.
-generate a one-time code, email it to that address using the SMTP side of
-this same app, and require it back before setting a new password. See the
-docstring on `MailboxAuth` in `src/smtpweb/web/mailbox_auth.py` for where this
-would go.
+Because claiming a mailbox requires nothing but knowing the address,
+anyone who knows/guesses an address could claim it before its real owner
+does. The principled fix would be verifying the person actually controls
+that address before letting them claim it or reset its password — e.g. a
+one-time code emailed to that address via the SMTP side of this same
+app, required back before setting a new password — which is **not
+implemented** (see the docstring on `MailboxAuth` in
+`src/smtpweb/web/mailbox_auth.py`). If you're exposing this beyond a
+trusted LAN, put an access-gating layer in front (a WireGuard-based
+tunnel/proxy like [Pangolin](https://github.com/fosrl/pangolin), a VPN,
+etc.) so only already-authenticated users can reach `/api/login` at all
+— that closes the practical risk without needing this app to send
+outbound mail itself.
 
 Setting only one of a pair of `SMTPWEB_SMTP_USERNAME`/`SMTPWEB_SMTP_PASSWORD`
 is treated as a misconfiguration and `smtpweb.smtp.main` refuses to start.
@@ -216,7 +233,7 @@ docker run -d --name smtpweb-smtp -p 1025:1025 \
   smtpweb python -m smtpweb.smtp.main
 
 docker run -d --name smtpweb-web -p 8080:8080 \
-  -v "$(pwd)/data/mail:/data/mail:ro" \
+  -v "$(pwd)/data/mail:/data/mail" \
   -v "$(pwd)/data/web:/data/web" \
   smtpweb python -m smtpweb.web.main
 ```
@@ -230,14 +247,15 @@ docker compose up -d --build
 
 You can inspect mail, SMTP credentials, and web login credentials on the
 host at `./data/mail`, `./data/smtp`, and `./data/web` respectively while
-the containers run — but note the `web` container itself only ever has
-read-only access to `./data/mail`, and no access at all to `./data/smtp`.
+the containers run — the `web` container has read/write access to
+`./data/mail` (needed to delete emails) but still no access at all to
+`./data/smtp`.
 
-For a real deployment, only the `smtp` container needs to be reachable
-from the public internet — keep the `web` container on an internal
-network or behind a VPN/proxy, since (a) it has no built-in TLS and (b)
-its self-service mailbox claiming has no ownership verification (see
-[Authentication](#authentication)).
+For a real deployment, keep the `web` container behind whatever
+access-gating layer you're using (see [Authentication](#authentication))
+— its self-service mailbox claiming has no ownership verification on its
+own, so it shouldn't be the only thing standing between the internet and
+your mail.
 
 ### CI: build, test, and publish to GHCR
 
@@ -270,6 +288,7 @@ data/smtp/smtp_credentials.json   # SMTP AUTH username + PBKDF2 hash + salt
 data/smtp/tls/cert.pem, key.pem   # self-signed cert used for SMTP STARTTLS
 
 data/web/<mailbox>/credentials.json   # that mailbox's web login (PBKDF2 hash + salt)
+data/web/tls/cert.pem, key.pem        # self-signed cert used for the web UI's HTTPS
 ```
 
 A message addressed to multiple recipients is stored as a full copy under
@@ -298,6 +317,7 @@ mailbox — there's no way to pass a different mailbox in in the request.
 - `GET /api/me` — the logged-in mailbox address
 - `GET /api/emails` — list received emails (metadata only)
 - `GET /api/emails/{id}` — full detail, including body text/html
+- `DELETE /api/emails/{id}` — permanently delete an email (and its attachments/thumbnails); 204 on success, 404 if it doesn't exist or belongs to a different mailbox. In the web UI this is the trash icon in the email detail view, behind a confirmation prompt.
 - `GET /api/emails/{id}/raw` — download the original `.eml`
 - `GET /api/emails/{id}/attachments/{filename}` — fetch an attachment; PDFs, common image types, and plain text render inline in the browser (e.g. printer-scanned PDFs preview directly), everything else downloads. The inline/download decision is made server-side from the filename extension, never from the sender-claimed content type, so a mislabeled attachment can't render inline — see `INLINE_SAFE_MEDIA_TYPES` in `src/smtpweb/web/app.py`.
 - `GET /api/emails/{id}/attachments/{filename}/thumbnail` — a PNG of a PDF attachment's first page (rendered with `pypdfium2` when the message is received), used by the UI to show a thumbnail without downloading the whole PDF; 404 if the attachment isn't a PDF or the PDF couldn't be rendered.

@@ -287,8 +287,26 @@ a {
   margin: 0;
 }
 
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.detail-header #delete-email {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.detail-header #delete-email:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 #detail-pane h2 {
-  margin: 0 0 14px;
+  margin: 0;
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;

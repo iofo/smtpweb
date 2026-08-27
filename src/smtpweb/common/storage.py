@@ -1,6 +1,7 @@
 import email
 import email.policy
 import json
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -185,6 +186,17 @@ class EmailStorage:
         if not meta_path.exists():
             raise FileNotFoundError(email_id)
         return json.loads(meta_path.read_text())
+
+    def delete_email(self, mailbox: str, email_id: str) -> None:
+        """Permanently remove an email and everything under it (body,
+        attachments, thumbnails). Raises FileNotFoundError if it doesn't
+        exist. Removing the <email-id> directory changes the parent
+        emails/ directory's own mtime the same way creating one does, so
+        list_emails()'s cache invalidates correctly with no extra work."""
+        email_dir = self._email_dir(mailbox, email_id)
+        if not email_dir.is_dir():
+            raise FileNotFoundError(email_id)
+        shutil.rmtree(email_dir)
 
     def get_body_text(self, mailbox: str, email_id: str) -> str | None:
         path = self._email_dir(mailbox, email_id) / "body.txt"
