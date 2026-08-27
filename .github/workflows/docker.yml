@@ -6,13 +6,25 @@ on:
   pull_request:
     branches: [master]
 
+# Repo-wide default: read-only. Neither job needs to write to the repo,
+# open issues/PRs, etc. — this bounds what a compromised step could do
+# with the ambient GITHUB_TOKEN, independent of DOCKERHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
-  # Always runs (push and PRs): builds the `test` stage from the Dockerfile
-  # and runs the full pytest suite against the actual packaged install.
+  # Runs on every push AND every pull_request, including from forks —
+  # deliberately never references `secrets.*` anywhere in this job, so
+  # there is nothing here for a malicious PR to steal. (GitHub also
+  # withholds secrets from pull_request-triggered runs whose head is a
+  # fork by default, but this job doesn't rely on that — it simply never
+  # asks for them.)
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Build test image
         run: docker build --target test -t smtpweb:test .
@@ -20,35 +32,46 @@ jobs:
       - name: Run tests
         run: docker run --rm smtpweb:test
 
-  # Only runs on pushes to main (never on PRs, which may come from forks
-  # without access to secrets) and only after tests pass.
+  # DOCKERHUB_TOKEN is only ever referenced in this job, and this job
+  # only ever runs when github.event_name == 'push' to the master branch
+  # — never for pull_request events (fork or same-repo), so a PR can
+  # never cause this job to execute regardless of what it changes,
+  # including changes to this workflow file itself. Reaching this job
+  # requires push access to the repository.
   publish:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Determine image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/smtpweb
           tags: |
             type=raw,value=latest
             type=sha,prefix=,format=short
 
+      # DOCKERHUB_TOKEN is consumed entirely by the login step above, via
+      # Docker's own credential store on the runner — it is never passed
+      # into this build as a build-arg or ENV, so it cannot end up baked
+      # into an image layer. Do not add a `build-args:`/`secrets:` entry
+      # here referencing it.
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           target: final
