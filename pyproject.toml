@@ -22,6 +22,9 @@ test = [
     "pytest>=8",
     "httpx>=0.27",
 ]
+lint = [
+    "ruff>=0.16",
+]
 
 [project.scripts]
 smtpweb-smtp = "smtpweb.smtp.main:run"
@@ -35,3 +38,15 @@ smtpweb = ["web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixed-format PDF byte content — not reflowable without breaking the
+# format's own byte offsets.
+"tests/conftest.py" = ["E501"]

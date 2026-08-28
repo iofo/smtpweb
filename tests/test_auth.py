@@ -3,8 +3,8 @@ import json
 import pytest
 from aiosmtpd.smtp import LoginPassword
 
-from smtpweb.smtp.auth import Authenticator, resolve_credentials
 from smtpweb.common.password_hashing import hash_password
+from smtpweb.smtp.auth import Authenticator, resolve_credentials
 
 ENV_NAMES = ("SMTPWEB_SMTP_USERNAME", "SMTPWEB_SMTP_PASSWORD")
 
@@ -15,30 +15,22 @@ class TestAuthenticator:
 
     def test_correct_credentials_succeed(self):
         authenticator = self._authenticator()
-        result = authenticator(
-            None, None, None, "PLAIN", LoginPassword(b"alice", b"s3cret")
-        )
+        result = authenticator(None, None, None, "PLAIN", LoginPassword(b"alice", b"s3cret"))
         assert result.success is True
 
     def test_wrong_password_fails(self):
         authenticator = self._authenticator()
-        result = authenticator(
-            None, None, None, "PLAIN", LoginPassword(b"alice", b"wrong")
-        )
+        result = authenticator(None, None, None, "PLAIN", LoginPassword(b"alice", b"wrong"))
         assert result.success is False
 
     def test_wrong_username_fails(self):
         authenticator = self._authenticator()
-        result = authenticator(
-            None, None, None, "LOGIN", LoginPassword(b"mallory", b"s3cret")
-        )
+        result = authenticator(None, None, None, "LOGIN", LoginPassword(b"mallory", b"s3cret"))
         assert result.success is False
 
     def test_unsupported_mechanism_rejected(self):
         authenticator = self._authenticator()
-        result = authenticator(
-            None, None, None, "CRAM-MD5", LoginPassword(b"alice", b"s3cret")
-        )
+        result = authenticator(None, None, None, "CRAM-MD5", LoginPassword(b"alice", b"s3cret"))
         assert result.success is False
 
     def test_non_login_password_auth_data_rejected(self):
@@ -48,16 +40,12 @@ class TestAuthenticator:
 
     def test_non_utf8_password_bytes_rejected_not_raised(self):
         authenticator = self._authenticator()
-        result = authenticator(
-            None, None, None, "PLAIN", LoginPassword(b"alice", b"\xff\xfe\xfd")
-        )
+        result = authenticator(None, None, None, "PLAIN", LoginPassword(b"alice", b"\xff\xfe\xfd"))
         assert result.success is False
 
     def test_corrupted_password_record_rejected_not_raised(self):
         authenticator = Authenticator("alice", {"algorithm": "pbkdf2_sha256"})
-        result = authenticator(
-            None, None, None, "PLAIN", LoginPassword(b"alice", b"s3cret")
-        )
+        result = authenticator(None, None, None, "PLAIN", LoginPassword(b"alice", b"s3cret"))
         assert result.success is False
 
 

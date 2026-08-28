@@ -2,12 +2,12 @@ import logging
 import signal
 import threading
 
-from smtpweb.smtp.auth import Authenticator, resolve_credentials
 from smtpweb.common.config import Settings
 from smtpweb.common.logging_config import configure_logging
-from smtpweb.smtp.server import build_controller
 from smtpweb.common.storage import EmailStorage
 from smtpweb.common.tls import build_tls_context, ensure_self_signed_cert
+from smtpweb.smtp.auth import Authenticator, resolve_credentials
+from smtpweb.smtp.server import build_controller
 
 log = logging.getLogger(__name__)
 

@@ -19,7 +19,14 @@ class FakeStorage:
     def save_message(self, envelope):
         if self.raise_on_save:
             raise RuntimeError("boom")
-        result = [{"id": "fake-id", "mailbox": "bob@example.com", "mail_from": envelope.mail_from, "size_bytes": 1}]
+        result = [
+            {
+                "id": "fake-id",
+                "mailbox": "bob@example.com",
+                "mail_from": envelope.mail_from,
+                "size_bytes": 1,
+            }
+        ]
         self.saved.append(envelope)
         return result
 

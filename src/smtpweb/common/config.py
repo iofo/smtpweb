@@ -18,8 +18,12 @@ class Settings:
     # tests) would silently have no effect.
     smtp_host: str = field(default_factory=lambda: os.environ.get("SMTPWEB_SMTP_HOST", "0.0.0.0"))
     smtp_port: int = field(default_factory=lambda: int(os.environ.get("SMTPWEB_SMTP_PORT", "1025")))
-    smtp_username: str | None = field(default_factory=lambda: os.environ.get("SMTPWEB_SMTP_USERNAME"))
-    smtp_password: str | None = field(default_factory=lambda: os.environ.get("SMTPWEB_SMTP_PASSWORD"))
+    smtp_username: str | None = field(
+        default_factory=lambda: os.environ.get("SMTPWEB_SMTP_USERNAME")
+    )
+    smtp_password: str | None = field(
+        default_factory=lambda: os.environ.get("SMTPWEB_SMTP_PASSWORD")
+    )
     web_host: str = field(default_factory=lambda: os.environ.get("SMTPWEB_WEB_HOST", "0.0.0.0"))
     web_port: int = field(default_factory=lambda: int(os.environ.get("SMTPWEB_WEB_PORT", "8080")))
     # Self-signed HTTPS is on by default — turning it off is meant for

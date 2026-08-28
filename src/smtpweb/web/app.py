@@ -9,8 +9,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from smtpweb.web.mailbox_auth import MailboxAuth
 from smtpweb.common.storage import EmailStorage
+from smtpweb.web.mailbox_auth import MailboxAuth
 
 STATIC_DIR = Path(__file__).parent / "static"
 SESSION_COOKIE = "smtpweb_session"
@@ -112,7 +112,7 @@ def create_app(
         try:
             meta = storage.get_email(mailbox, email_id)
         except (FileNotFoundError, ValueError):
-            raise HTTPException(404, "Email not found")
+            raise HTTPException(404, "Email not found") from None
         meta = dict(meta)
         meta["text_body"] = storage.get_body_text(mailbox, email_id)
         meta["html_body"] = storage.get_body_html(mailbox, email_id)
@@ -123,7 +123,7 @@ def create_app(
         try:
             path = storage.get_raw_path(mailbox, email_id)
         except ValueError:
-            raise HTTPException(400, "Invalid email id")
+            raise HTTPException(400, "Invalid email id") from None
         if not path.exists():
             raise HTTPException(404, "Email not found")
         return FileResponse(path, media_type="message/rfc822", filename=f"{email_id}.eml")
@@ -133,7 +133,7 @@ def create_app(
         try:
             path = storage.get_attachment_path(mailbox, email_id, filename)
         except ValueError:
-            raise HTTPException(400, "Invalid attachment reference")
+            raise HTTPException(400, "Invalid attachment reference") from None
         if not path.exists():
             raise HTTPException(404, "Attachment not found")
 
@@ -154,7 +154,7 @@ def create_app(
         try:
             storage.delete_email(mailbox, email_id)
         except (FileNotFoundError, ValueError):
-            raise HTTPException(404, "Email not found")
+            raise HTTPException(404, "Email not found") from None
 
     @app.get("/api/emails/{email_id}/attachments/{filename}/thumbnail")
     def get_attachment_thumbnail(
@@ -163,7 +163,7 @@ def create_app(
         try:
             path = storage.get_attachment_thumbnail_path(mailbox, email_id, filename)
         except ValueError:
-            raise HTTPException(400, "Invalid attachment reference")
+            raise HTTPException(400, "Invalid attachment reference") from None
         if not path.exists():
             raise HTTPException(404, "Thumbnail not found")
         return FileResponse(

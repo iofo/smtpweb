@@ -20,7 +20,10 @@ def test_written_files_are_owner_only(storage, mail_dir):
         make_envelope(
             rcpt_tos=("bob@example.com",),
             html="<p>hi</p>",
-            attachments=[("note.txt", "text/plain", b"x"), ("scan.pdf", "application/pdf", MINIMAL_PDF_BYTES)],
+            attachments=[
+                ("note.txt", "text/plain", b"x"),
+                ("scan.pdf", "application/pdf", MINIMAL_PDF_BYTES),
+            ],
         )
     )
     meta = results[0]
@@ -41,9 +44,7 @@ def test_written_files_are_owner_only(storage, mail_dir):
 
 
 def test_save_message_writes_html_body(storage):
-    results = storage.save_message(
-        make_envelope(text="plain part", html="<p>html part</p>")
-    )
+    results = storage.save_message(make_envelope(text="plain part", html="<p>html part</p>"))
     meta = results[0]
     html = storage.get_body_html(meta["mailbox"], meta["id"])
     text = storage.get_body_text(meta["mailbox"], meta["id"])
@@ -93,9 +94,7 @@ def test_corrupted_pdf_attachment_has_no_thumbnail(storage):
 
 
 def test_multi_recipient_message_stored_under_each_mailbox(storage):
-    results = storage.save_message(
-        make_envelope(rcpt_tos=("bob@example.com", "eve@example.com"))
-    )
+    results = storage.save_message(make_envelope(rcpt_tos=("bob@example.com", "eve@example.com")))
     assert len(results) == 2
     mailboxes = {r["mailbox"] for r in results}
     assert mailboxes == {"bob@example.com", "eve@example.com"}
@@ -202,9 +201,7 @@ def test_get_attachment_path_rejects_path_traversal_filename(storage):
 
 
 def test_get_attachment_path_strips_directory_components(storage):
-    results = storage.save_message(
-        make_envelope(attachments=[("note.txt", "text/plain", b"x")])
-    )
+    results = storage.save_message(make_envelope(attachments=[("note.txt", "text/plain", b"x")]))
     meta = results[0]
     # A filename smuggling a parent-directory traversal must resolve to
     # just the basename within this email's own attachments dir, never

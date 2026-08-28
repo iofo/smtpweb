@@ -1,8 +1,6 @@
 import json
 import threading
 
-import pytest
-
 
 def test_first_login_claims_mailbox(mailbox_auth):
     result = mailbox_auth.login("bob@example.com", "hunter2")
