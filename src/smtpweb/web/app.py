@@ -1,6 +1,4 @@
 import mimetypes
-import secrets
-import time
 from pathlib import Path
 
 from fastapi import APIRouter, Cookie, Depends, FastAPI, HTTPException, Response
@@ -11,6 +9,7 @@ from pydantic import BaseModel
 
 from smtpweb.common.storage import EmailStorage
 from smtpweb.web.mailbox_auth import MailboxAuth
+from smtpweb.web.session_store import SessionStore
 
 STATIC_DIR = Path(__file__).parent / "static"
 SESSION_COOKIE = "smtpweb_session"
@@ -50,26 +49,13 @@ def create_app(
     # mode anywhere else, and the auto-generated API docs would otherwise be
     # the one unauthenticated thing exposing the full route/schema surface.
     app = FastAPI(title="smtpweb", docs_url=None, redoc_url=None, openapi_url=None)
-    # token -> (mailbox, expires_at). Expired entries are evicted lazily
-    # (on lookup) and swept opportunistically (on login), since nothing
-    # else ever removes a session that its owner never logs out of.
-    sessions: dict[str, tuple[str, float]] = {}
-
-    def _sweep_expired_sessions() -> None:
-        now = time.time()
-        expired = [token for token, (_, expires_at) in sessions.items() if expires_at <= now]
-        for token in expired:
-            del sessions[token]
+    session_store = SessionStore(SESSION_MAX_AGE_SECONDS)
 
     def require_session(
         session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
     ) -> str:
-        entry = sessions.get(session) if session else None
-        if entry is None:
-            raise HTTPException(401, "Not authenticated")
-        mailbox, expires_at = entry
-        if expires_at <= time.time():
-            sessions.pop(session, None)
+        mailbox = session_store.get(session)
+        if mailbox is None:
             raise HTTPException(401, "Not authenticated")
         return mailbox
 
@@ -87,9 +73,7 @@ def create_app(
         mailbox = mailbox_auth.login(payload.username, payload.password)
         if mailbox is None:
             raise HTTPException(401, "Invalid credentials")
-        _sweep_expired_sessions()
-        token = secrets.token_urlsafe(32)
-        sessions[token] = (mailbox, time.time() + SESSION_MAX_AGE_SECONDS)
+        token = session_store.create(mailbox)
         response.set_cookie(
             SESSION_COOKIE,
             token,
@@ -102,9 +86,7 @@ def create_app(
 
     @app.post("/api/logout")
     def logout(request: Request, response: Response):
-        token = request.cookies.get(SESSION_COOKIE)
-        if token:
-            sessions.pop(token, None)
+        session_store.delete(request.cookies.get(SESSION_COOKIE))
         response.delete_cookie(SESSION_COOKIE)
         return {"ok": True}
 
