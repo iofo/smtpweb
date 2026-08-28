@@ -1,0 +1,30 @@
+services:
+  smtp:
+    image: ghcr.io/iofo/smtpweb:latest
+    command: python -m smtpweb.smtp.main
+    ports:
+      - "1025:1025"
+    volumes:
+      - ./data/mail:/data/mail
+      - ./data/smtp:/data/smtp
+    restart: unless-stopped
+    # Uncomment both to set your own SMTP AUTH credentials instead of
+    # letting the server generate one on first run (see `docker compose
+    # logs smtp` to read a generated password -- it's shown only once).
+    # environment:
+    #   - SMTPWEB_SMTP_USERNAME=myuser
+    #   - SMTPWEB_SMTP_PASSWORD=my-chosen-password
+
+  web:
+    image: ghcr.io/iofo/smtpweb:latest
+    command: python -m smtpweb.web.main
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data/mail:/data/mail
+      - ./data/web:/data/web
+    restart: unless-stopped
+    # Uncomment to serve plain HTTP instead of a self-signed HTTPS cert --
+    # e.g. behind a proxy that already terminates TLS itself.
+    # environment:
+    #   - SMTPWEB_WEB_TLS=false

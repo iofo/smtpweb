@@ -42,10 +42,19 @@ CMD ["sh", "-c", "ruff check . && ruff format --check ."]
 
 FROM base AS final
 
-RUN useradd --create-home --uid 1000 smtpweb \
+# gosu: lets the entrypoint start as root just long enough to fix up
+# bind-mount ownership (see entrypoint.sh), then drop to smtpweb -- unlike
+# `su`, it execs directly with no shell/subprocess in between, so signals
+# still reach the app process correctly.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1000 smtpweb \
     && mkdir -p /data/mail /data/smtp/tls /data/web \
     && chown -R smtpweb:smtpweb /data
-USER smtpweb
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV SMTPWEB_MAIL_DIR=/data/mail \
     SMTPWEB_SMTP_STATE_DIR=/data/smtp \
@@ -60,6 +69,8 @@ ENV SMTPWEB_MAIL_DIR=/data/mail \
 # see README > Authentication for why that split matters.
 VOLUME ["/data/mail", "/data/smtp", "/data/web"]
 EXPOSE 1025 8080
+
+ENTRYPOINT ["/entrypoint.sh"]
 
 # One image, two entrypoints — override the command to run either process
 # (see docker-compose.yml, which runs both as separate services/containers).
