@@ -53,3 +53,8 @@ class Settings:
     web_state_dir: Path = field(
         default_factory=lambda: Path(os.environ.get("SMTPWEB_WEB_STATE_DIR", "./data/web"))
     )
+    # Set at image build time (see Dockerfile's GIT_SHA build arg and the
+    # publish job in .github/workflows/docker.yml) so the running web UI
+    # can show which commit it was built from. "dev" for a local build
+    # with no build-arg passed.
+    git_sha: str = field(default_factory=lambda: os.environ.get("SMTPWEB_GIT_SHA", "dev"))

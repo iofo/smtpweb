@@ -352,7 +352,11 @@ class TestUnauthenticatedAccessBlocked:
             assert app_client.get(path).status_code == 404, path
 
     # Routes deliberately reachable with no session at all.
-    PUBLIC_ROUTES = {("/api/login", "post"), ("/api/logout", "post")}
+    PUBLIC_ROUTES = {
+        ("/api/login", "post"),
+        ("/api/logout", "post"),
+        ("/api/version", "get"),
+    }
 
     # Every other route's path parameters, filled in with a syntactically
     # valid but nonexistent value so the request reaches the route's own
@@ -377,3 +381,47 @@ class TestUnauthenticatedAccessBlocked:
         # Guards against the walk itself silently checking nothing (e.g. if
         # the schema shape changes again in a future FastAPI version).
         assert checked >= 7
+
+
+class TestVersion:
+    def test_version_reachable_without_a_session(self, app_client):
+        response = app_client.get("/api/version")
+        assert response.status_code == 200
+
+    def test_version_defaults_to_dev(self, app_client):
+        """create_app() defaults git_sha to "dev" when the caller (here,
+        the app_client fixture) doesn't pass one -- the same default a
+        plain local `docker build` with no --build-arg gets."""
+        assert app_client.get("/api/version").json() == {"git_sha": "dev"}
+
+    def test_version_reflects_configured_git_sha(self, storage, mailbox_auth):
+        from fastapi.testclient import TestClient
+
+        from smtpweb.web.app import create_app
+
+        client = TestClient(create_app(storage, mailbox_auth, git_sha="abc1234"))
+        assert client.get("/api/version").json() == {"git_sha": "abc1234"}
+
+
+class TestStaticCacheControl:
+    """The frontend is static (index.html/app.js/style.css) but the image
+    serving it changes on every deploy -- without an explicit
+    Cache-Control, browsers fall back to heuristic caching and can keep
+    serving a stale cached copy indefinitely. `no-cache` forces a
+    conditional request (cheap, thanks to StaticFiles' own ETag) on every
+    load instead."""
+
+    def test_index_has_no_cache_cache_control(self, app_client):
+        response = app_client.get("/")
+        assert response.headers.get("cache-control") == "no-cache"
+
+    def test_static_asset_has_no_cache_cache_control(self, app_client):
+        response = app_client.get("/app.js")
+        assert response.headers.get("cache-control") == "no-cache"
+
+    def test_api_routes_are_not_forced_no_cache(self, app_client):
+        """The middleware only targets the static frontend -- an API
+        response overriding its own caching (or having none) shouldn't be
+        clobbered by a blanket no-cache."""
+        response = app_client.get("/api/version")
+        assert response.headers.get("cache-control") != "no-cache"

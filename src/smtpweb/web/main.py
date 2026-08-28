@@ -37,6 +37,7 @@ def run():
         )
 
     log.info("Web UI listening on %s://%s:%s", scheme, settings.web_host, settings.web_port)
+    log.info("Running from commit %s", settings.git_sha)
     log.info(
         "Log in with a recipient's email address as the username — the "
         "password entered the first time for a given mailbox becomes its "
@@ -44,7 +45,12 @@ def run():
     )
 
     uvicorn.run(
-        create_app(storage, mailbox_auth, cookie_secure=settings.web_tls_enabled),
+        create_app(
+            storage,
+            mailbox_auth,
+            cookie_secure=settings.web_tls_enabled,
+            git_sha=settings.git_sha,
+        ),
         host=settings.web_host,
         port=settings.web_port,
         **uvicorn_tls_kwargs,

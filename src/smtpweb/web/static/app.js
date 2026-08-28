@@ -82,6 +82,20 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+async function loadVersion() {
+  const el = document.getElementById("version-badge");
+  if (!el) return;
+  try {
+    const res = await fetch("/api/version");
+    const data = await res.json();
+    const sha = data.git_sha || "dev";
+    el.textContent = sha === "dev" ? "dev build" : sha.slice(0, 7);
+    el.title = sha === "dev" ? "" : `commit ${sha}`;
+  } catch {
+    // Non-essential UI chrome -- leave it blank rather than fail the page.
+  }
+}
+
 async function checkAuth() {
   const res = await fetch("/api/me");
   if (res.ok) {
@@ -117,8 +131,10 @@ function renderLogin(errorMessage) {
         <button type="submit" class="btn btn-primary" id="login-submit">Log in</button>
         ${errorMessage ? `<p class="error">${escapeHtml(errorMessage)}</p>` : ""}
       </form>
+      <div id="version-badge" class="version-badge"></div>
     </div>
   `;
+  loadVersion();
   document.getElementById("login-username").focus();
   document.getElementById("login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -157,6 +173,7 @@ function renderInbox() {
       </header>
       <div id="whoami"></div>
       <ul id="email-list"></ul>
+      <div id="version-badge" class="version-badge"></div>
     </aside>
     <main id="detail-pane">
       <div class="placeholder-state">
@@ -183,6 +200,7 @@ function renderInbox() {
   });
 
   loadList();
+  loadVersion();
   refreshTimer = setInterval(loadList, POLL_INTERVAL_MS);
 }
 

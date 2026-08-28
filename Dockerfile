@@ -56,13 +56,19 @@ RUN apt-get update \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Set by CI (see .github/workflows/docker.yml's publish job) to the
+# commit it's building from, so the running web UI can show it -- "dev"
+# for a plain local `docker build` with no --build-arg passed.
+ARG GIT_SHA=dev
+
 ENV SMTPWEB_MAIL_DIR=/data/mail \
     SMTPWEB_SMTP_STATE_DIR=/data/smtp \
     SMTPWEB_WEB_STATE_DIR=/data/web \
     SMTPWEB_SMTP_HOST=0.0.0.0 \
     SMTPWEB_SMTP_PORT=1025 \
     SMTPWEB_WEB_HOST=0.0.0.0 \
-    SMTPWEB_WEB_PORT=8080
+    SMTPWEB_WEB_PORT=8080 \
+    SMTPWEB_GIT_SHA=$GIT_SHA
 
 # Declared separately (not one shared /data) so docker-compose.yml can
 # mount each into only the container/process that actually needs it —

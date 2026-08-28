@@ -17,6 +17,7 @@ def test_defaults_when_unset(monkeypatch):
         "SMTPWEB_MAIL_DIR",
         "SMTPWEB_SMTP_STATE_DIR",
         "SMTPWEB_WEB_STATE_DIR",
+        "SMTPWEB_GIT_SHA",
     ]:
         monkeypatch.delenv(var, raising=False)
 
@@ -31,6 +32,12 @@ def test_defaults_when_unset(monkeypatch):
     assert settings.mail_dir == Path("./data/mail")
     assert settings.smtp_state_dir == Path("./data/smtp")
     assert settings.web_state_dir == Path("./data/web")
+    assert settings.git_sha == "dev"
+
+
+def test_git_sha_reads_from_environment(monkeypatch):
+    monkeypatch.setenv("SMTPWEB_GIT_SHA", "abc1234")
+    assert Settings().git_sha == "abc1234"
 
 
 @pytest.mark.parametrize("value", ["true", "True", "TRUE", "1", "yes", "on"])

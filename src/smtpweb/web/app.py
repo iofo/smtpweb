@@ -43,13 +43,30 @@ class LoginPayload(BaseModel):
 
 
 def create_app(
-    storage: EmailStorage, mailbox_auth: MailboxAuth, cookie_secure: bool = False
+    storage: EmailStorage,
+    mailbox_auth: MailboxAuth,
+    cookie_secure: bool = False,
+    git_sha: str = "dev",
 ) -> FastAPI:
     # docs_url/redoc_url/openapi_url disabled: this app has no open/anonymous
     # mode anywhere else, and the auto-generated API docs would otherwise be
     # the one unauthenticated thing exposing the full route/schema surface.
     app = FastAPI(title="smtpweb", docs_url=None, redoc_url=None, openapi_url=None)
     session_store = SessionStore(SESSION_MAX_AGE_SECONDS)
+
+    # The frontend (index.html/app.js/style.css) is static and served
+    # below via StaticFiles, which sets Last-Modified/ETag but no
+    # Cache-Control -- browsers then fall back to heuristic caching and
+    # can keep serving a stale cached copy after a new image is deployed
+    # without ever asking the server. `no-cache` (NOT `no-store`) forces
+    # a conditional request on every load; the ETag makes that cheap --
+    # a 304 with no body when nothing changed, a fresh 200 when it has.
+    @app.middleware("http")
+    async def add_static_cache_control(request: Request, call_next):
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
 
     def require_session(
         session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -67,6 +84,10 @@ def create_app(
     # too; FastAPI caches the dependency per request, so that's a second
     # read of the same result, not a second auth check.
     protected = APIRouter(dependencies=[Depends(require_session)])
+
+    @app.get("/api/version")
+    def version():
+        return {"git_sha": git_sha}
 
     @app.post("/api/login")
     def login(payload: LoginPayload, response: Response):
