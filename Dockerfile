@@ -29,6 +29,17 @@ COPY tests ./tests
 CMD ["pytest"]
 
 
+# `docker build --target lint -t smtpweb:lint . && docker run --rm smtpweb:lint`
+# Same rationale as the test stage: lints/formats-checks the actual
+# packaged source, not part of the default build target.
+FROM base AS lint
+
+COPY requirements-lint.txt ./
+RUN pip install --no-cache-dir -r requirements-lint.txt
+COPY tests ./tests
+CMD ["sh", "-c", "ruff check . && ruff format --check ."]
+
+
 FROM base AS final
 
 RUN useradd --create-home --uid 1000 smtpweb \

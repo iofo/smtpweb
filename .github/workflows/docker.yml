@@ -32,6 +32,12 @@ jobs:
       - name: Run tests
         run: docker run --rm smtpweb:test
 
+      - name: Build lint image
+        run: docker build --target lint -t smtpweb:lint .
+
+      - name: Run lint (ruff check + format --check)
+        run: docker run --rm smtpweb:lint
+
   # Publishes to ghcr.io (GitHub Container Registry) using the workflow's
   # own GITHUB_TOKEN — generated fresh per run and expired by GitHub as
   # soon as the job ends, so there's no long-lived credential to manage,
