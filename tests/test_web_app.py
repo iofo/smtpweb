@@ -350,3 +350,30 @@ class TestUnauthenticatedAccessBlocked:
         surface — see docs_url=None in create_app()."""
         for path in ("/docs", "/redoc", "/openapi.json"):
             assert app_client.get(path).status_code == 404, path
+
+    # Routes deliberately reachable with no session at all.
+    PUBLIC_ROUTES = {("/api/login", "post"), ("/api/logout", "post")}
+
+    # Every other route's path parameters, filled in with a syntactically
+    # valid but nonexistent value so the request reaches the route's own
+    # dependency chain instead of failing path validation first.
+    PATH_PARAM_VALUES = {"email_id": "does-not-exist", "filename": "does-not-exist.txt"}
+
+    def test_every_route_not_explicitly_public_requires_a_session(self, app_client):
+        """Walks the app's own OpenAPI schema (not a hand-maintained list)
+        so a new route added to web/app.py without Depends(require_session)
+        — or without being added to protected_router — fails this test
+        automatically, instead of silently shipping unauthenticated."""
+        schema = app_client.app.openapi()
+        checked = 0
+        for path, operations in schema["paths"].items():
+            resolved_path = path.format(**self.PATH_PARAM_VALUES)
+            for method in operations:
+                if (path, method) in self.PUBLIC_ROUTES:
+                    continue
+                response = app_client.request(method.upper(), resolved_path)
+                assert response.status_code == 401, (method.upper(), resolved_path)
+                checked += 1
+        # Guards against the walk itself silently checking nothing (e.g. if
+        # the schema shape changes again in a future FastAPI version).
+        assert checked >= 7

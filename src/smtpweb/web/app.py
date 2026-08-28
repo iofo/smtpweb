@@ -3,7 +3,7 @@ import secrets
 import time
 from pathlib import Path
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, FastAPI, HTTPException, Response
 from fastapi.requests import Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -73,6 +73,15 @@ def create_app(
             raise HTTPException(401, "Not authenticated")
         return mailbox
 
+    # Every route added to this router requires a valid session by
+    # construction — the check runs before the route function at all, so a
+    # route can't accidentally ship without it the way a per-route
+    # `Depends(require_session)` could be forgotten on. Handlers that need
+    # the mailbox value still declare `Depends(require_session)` themselves
+    # too; FastAPI caches the dependency per request, so that's a second
+    # read of the same result, not a second auth check.
+    protected = APIRouter(dependencies=[Depends(require_session)])
+
     @app.post("/api/login")
     def login(payload: LoginPayload, response: Response):
         mailbox = mailbox_auth.login(payload.username, payload.password)
@@ -99,15 +108,15 @@ def create_app(
         response.delete_cookie(SESSION_COOKIE)
         return {"ok": True}
 
-    @app.get("/api/me")
+    @protected.get("/api/me")
     def me(mailbox: str = Depends(require_session)):
         return {"username": mailbox}
 
-    @app.get("/api/emails")
+    @protected.get("/api/emails")
     def list_emails(mailbox: str = Depends(require_session)):
         return storage.list_emails(mailbox)
 
-    @app.get("/api/emails/{email_id}")
+    @protected.get("/api/emails/{email_id}")
     def get_email(email_id: str, mailbox: str = Depends(require_session)):
         try:
             meta = storage.get_email(mailbox, email_id)
@@ -118,7 +127,7 @@ def create_app(
         meta["html_body"] = storage.get_body_html(mailbox, email_id)
         return meta
 
-    @app.get("/api/emails/{email_id}/raw")
+    @protected.get("/api/emails/{email_id}/raw")
     def get_raw(email_id: str, mailbox: str = Depends(require_session)):
         try:
             path = storage.get_raw_path(mailbox, email_id)
@@ -128,7 +137,7 @@ def create_app(
             raise HTTPException(404, "Email not found")
         return FileResponse(path, media_type="message/rfc822", filename=f"{email_id}.eml")
 
-    @app.get("/api/emails/{email_id}/attachments/{filename}")
+    @protected.get("/api/emails/{email_id}/attachments/{filename}")
     def get_attachment(email_id: str, filename: str, mailbox: str = Depends(require_session)):
         try:
             path = storage.get_attachment_path(mailbox, email_id, filename)
@@ -149,14 +158,14 @@ def create_app(
             headers=SECURITY_HEADERS,
         )
 
-    @app.delete("/api/emails/{email_id}", status_code=204)
+    @protected.delete("/api/emails/{email_id}", status_code=204)
     def delete_email(email_id: str, mailbox: str = Depends(require_session)):
         try:
             storage.delete_email(mailbox, email_id)
         except (FileNotFoundError, ValueError):
             raise HTTPException(404, "Email not found") from None
 
-    @app.get("/api/emails/{email_id}/attachments/{filename}/thumbnail")
+    @protected.get("/api/emails/{email_id}/attachments/{filename}/thumbnail")
     def get_attachment_thumbnail(
         email_id: str, filename: str, mailbox: str = Depends(require_session)
     ):
@@ -174,6 +183,7 @@ def create_app(
             headers=SECURITY_HEADERS,
         )
 
+    app.include_router(protected)
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app
