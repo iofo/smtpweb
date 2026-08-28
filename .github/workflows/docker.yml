@@ -38,6 +38,97 @@ jobs:
       - name: Run lint (ruff check + format --check)
         run: docker run --rm smtpweb:lint
 
+  # Runs the *actual final image* (not the editable/test-stage install) as
+  # two real containers on real ports, and drives it exactly the way a
+  # user would: send mail in over SMTP AUTH+STARTTLS, read it back out
+  # over the web API. Catches the class of bug the in-process TestClient
+  # suite structurally can't — missing package-data, a broken CMD, TLS
+  # cert generation failing at runtime, env var wiring — because those
+  # only exist once the packaged image is actually running as itself.
+  # Also never references `secrets.*`, for the same fork-PR reason as
+  # the `test` job above.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build final image
+        run: docker build --target final -t smtpweb:smoke .
+
+      - name: Start smtp + web containers
+        run: |
+          docker volume create smoke-mail
+          docker run -d --name smoke-smtp \
+            -p 1025:1025 \
+            -e SMTPWEB_SMTP_USERNAME=smoketest \
+            -e SMTPWEB_SMTP_PASSWORD=smoketest-password \
+            -v smoke-mail:/data/mail \
+            smtpweb:smoke python -m smtpweb.smtp.main
+          docker run -d --name smoke-web \
+            -p 8080:8080 \
+            -v smoke-mail:/data/mail \
+            smtpweb:smoke python -m smtpweb.web.main
+
+      - name: Wait for both containers to be ready
+        run: |
+          for i in $(seq 1 30); do
+            curl -sk -o /dev/null "https://127.0.0.1:8080/" && web_ready=1 || web_ready=0
+            (echo > /dev/tcp/127.0.0.1/1025) 2>/dev/null && smtp_ready=1 || smtp_ready=0
+            if [ "$web_ready" = 1 ] && [ "$smtp_ready" = 1 ]; then
+              echo "both ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::containers never became ready"
+          docker logs smoke-smtp
+          docker logs smoke-web
+          exit 1
+
+      - name: Unauthenticated API access is rejected, not exposed
+        run: |
+          status=$(curl -sk -o /dev/null -w "%{http_code}" "https://127.0.0.1:8080/api/emails")
+          test "$status" = "401" || { echo "expected 401, got $status"; exit 1; }
+
+      - name: Send real mail over SMTP AUTH+STARTTLS
+        run: |
+          python3 scripts/send_test_emails.py \
+            --username smoketest --password smoketest-password
+
+      - name: Read it back over the web API
+        run: |
+          cookie_jar=$(mktemp)
+          status=$(curl -sk -o /dev/null -w "%{http_code}" -c "$cookie_jar" \
+            -X POST "https://127.0.0.1:8080/api/login" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"bob@example.com","password":"smoke-test-mailbox-password"}')
+          test "$status" = "200" || { echo "login failed: $status"; exit 1; }
+
+          body=$(curl -sk -b "$cookie_jar" "https://127.0.0.1:8080/api/emails")
+          echo "$body" | python3 -c '
+          import json, sys
+          emails = json.load(sys.stdin)
+          assert len(emails) >= 3, f"expected >=3 emails, got {len(emails)}"
+          subjects = {e["subject"] for e in emails}
+          assert "Plain text email" in subjects, subjects
+          assert any(e["attachments"] for e in emails), "no email had attachments"
+          print(f"OK: {len(emails)} emails visible, subjects={subjects}")
+          '
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          docker logs smoke-smtp || true
+          docker logs smoke-web || true
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f smoke-smtp smoke-web || true
+          docker volume rm smoke-mail || true
+
   # Publishes to ghcr.io (GitHub Container Registry) using the workflow's
   # own GITHUB_TOKEN — generated fresh per run and expired by GitHub as
   # soon as the job ends, so there's no long-lived credential to manage,
@@ -48,7 +139,7 @@ jobs:
   # including changes to this workflow file itself. Reaching this job
   # requires push access to the repository.
   publish:
-    needs: test
+    needs: [test, smoke]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
