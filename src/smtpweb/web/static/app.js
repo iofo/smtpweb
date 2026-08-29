@@ -3,6 +3,7 @@ const POLL_INTERVAL_MS = 10000;
 let currentUsername = null;
 let selectedId = null;
 let refreshTimer = null;
+let versionInfo = null;
 
 const ICONS = {
   mail: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>`,
@@ -86,9 +87,14 @@ async function loadVersion() {
   const el = document.getElementById("version-badge");
   if (!el) return;
   try {
-    const res = await fetch("/api/version");
-    const data = await res.json();
-    const sha = data.git_sha || "dev";
+    // The version never changes within a page load, so fetch it once and
+    // reuse it -- renderLogin() (e.g. after a wrong password) and
+    // renderInbox() both call this on every render.
+    if (!versionInfo) {
+      const res = await fetch("/api/version");
+      versionInfo = await res.json();
+    }
+    const sha = versionInfo.git_sha || "dev";
     el.textContent = sha === "dev" ? "dev build" : sha.slice(0, 7);
     el.title = sha === "dev" ? "" : `commit ${sha}`;
   } catch {

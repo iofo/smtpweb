@@ -37,6 +37,23 @@ INLINE_SAFE_MEDIA_TYPES = {
 SECURITY_HEADERS = {"X-Content-Type-Options": "nosniff"}
 
 
+class CachedStaticFiles(StaticFiles):
+    """StaticFiles that forces a conditional request on every load.
+
+    StaticFiles sets Last-Modified/ETag but no Cache-Control -- browsers
+    then fall back to heuristic caching and can keep serving a stale
+    cached copy after a new image is deployed without ever asking the
+    server. `no-cache` (NOT `no-store`) forces a conditional request on
+    every load; the ETag makes that cheap -- a 304 with no body when
+    nothing changed, a fresh 200 when it has.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
 class LoginPayload(BaseModel):
     username: str
     password: str
@@ -53,20 +70,6 @@ def create_app(
     # the one unauthenticated thing exposing the full route/schema surface.
     app = FastAPI(title="smtpweb", docs_url=None, redoc_url=None, openapi_url=None)
     session_store = SessionStore(SESSION_MAX_AGE_SECONDS)
-
-    # The frontend (index.html/app.js/style.css) is static and served
-    # below via StaticFiles, which sets Last-Modified/ETag but no
-    # Cache-Control -- browsers then fall back to heuristic caching and
-    # can keep serving a stale cached copy after a new image is deployed
-    # without ever asking the server. `no-cache` (NOT `no-store`) forces
-    # a conditional request on every load; the ETag makes that cheap --
-    # a 304 with no body when nothing changed, a fresh 200 when it has.
-    @app.middleware("http")
-    async def add_static_cache_control(request: Request, call_next):
-        response = await call_next(request)
-        if not request.url.path.startswith("/api/"):
-            response.headers.setdefault("Cache-Control", "no-cache")
-        return response
 
     def require_session(
         session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -187,6 +190,6 @@ def create_app(
         )
 
     app.include_router(protected)
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    app.mount("/", CachedStaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app

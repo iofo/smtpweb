@@ -141,6 +141,27 @@ class TestEmailDetail:
         response = app_client.get(f"/api/emails/{email_id}/attachments/does-not-exist.txt")
         assert response.status_code == 404
 
+    def test_cannot_fetch_another_mailboxes_raw_eml(self, app_client, storage):
+        results = storage.save_message(make_envelope(rcpt_tos=("bob@example.com",)))
+        email_id = results[0]["id"]
+
+        login(app_client, "eve@example.com", "eves-password")
+        response = app_client.get(f"/api/emails/{email_id}/raw")
+        assert response.status_code == 404
+
+    def test_cannot_fetch_another_mailboxes_attachment(self, app_client, storage):
+        results = storage.save_message(
+            make_envelope(
+                rcpt_tos=("bob@example.com",),
+                attachments=[("note.txt", "text/plain", b"attachment contents")],
+            )
+        )
+        email_id = results[0]["id"]
+
+        login(app_client, "eve@example.com", "eves-password")
+        response = app_client.get(f"/api/emails/{email_id}/attachments/note.txt")
+        assert response.status_code == 404
+
 
 class TestAttachmentDisposition:
     """PDF/image/text attachments should preview inline in the browser;
