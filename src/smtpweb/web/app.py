@@ -7,13 +7,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from smtpweb.common.mailbox import sanitize_mailbox_name
 from smtpweb.common.storage import EmailStorage
+from smtpweb.web.login_rate_limit import LoginRateLimiter
 from smtpweb.web.mailbox_auth import MailboxAuth
 from smtpweb.web.session_store import SessionStore
 
 STATIC_DIR = Path(__file__).parent / "static"
 SESSION_COOKIE = "smtpweb_session"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 15 * 60
 
 # Types safe to render inline in the browser instead of forcing a download.
 # Deliberately excludes text/html, image/svg+xml, and anything else that
@@ -64,12 +68,15 @@ def create_app(
     mailbox_auth: MailboxAuth,
     cookie_secure: bool = False,
     git_sha: str = "dev",
+    login_max_attempts: int = LOGIN_MAX_ATTEMPTS,
+    login_window_seconds: float = LOGIN_WINDOW_SECONDS,
 ) -> FastAPI:
     # docs_url/redoc_url/openapi_url disabled: this app has no open/anonymous
     # mode anywhere else, and the auto-generated API docs would otherwise be
     # the one unauthenticated thing exposing the full route/schema surface.
     app = FastAPI(title="smtpweb", docs_url=None, redoc_url=None, openapi_url=None)
     session_store = SessionStore(SESSION_MAX_AGE_SECONDS)
+    login_rate_limiter = LoginRateLimiter(login_max_attempts, login_window_seconds)
 
     def require_session(
         session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -94,9 +101,27 @@ def create_app(
 
     @app.post("/api/login")
     def login(payload: LoginPayload, response: Response):
+        # Rate-limit by the normalized mailbox, not by client IP: it's the
+        # per-mailbox password that's being guessed, and IP-based limits
+        # are trivially defeated by a botnet anyway. Note the first-ever
+        # login for a given mailbox always succeeds (self-service claim —
+        # see MailboxAuth's docstring), so this only ever throttles wrong
+        # passwords against an already-claimed mailbox.
+        try:
+            rate_limit_key = sanitize_mailbox_name(payload.username)
+        except ValueError:
+            rate_limit_key = None
+
+        if rate_limit_key is not None and login_rate_limiter.is_limited(rate_limit_key):
+            raise HTTPException(429, "Too many login attempts. Try again later.")
+
         mailbox = mailbox_auth.login(payload.username, payload.password)
         if mailbox is None:
+            if rate_limit_key is not None:
+                login_rate_limiter.record_failure(rate_limit_key)
             raise HTTPException(401, "Invalid credentials")
+
+        login_rate_limiter.reset(mailbox)
         token = session_store.create(mailbox)
         response.set_cookie(
             SESSION_COOKIE,

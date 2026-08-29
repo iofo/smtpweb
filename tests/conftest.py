@@ -74,6 +74,18 @@ def secure_app_client(storage, mailbox_auth):
     return TestClient(create_app(storage, mailbox_auth, cookie_secure=True))
 
 
+@pytest.fixture
+def rate_limited_app_client(storage, mailbox_auth):
+    """Same as app_client, but with a login_max_attempts small enough to
+    hit the /api/login rate limit in a handful of requests instead of the
+    real ~production default."""
+    from fastapi.testclient import TestClient
+
+    return TestClient(
+        create_app(storage, mailbox_auth, login_max_attempts=3, login_window_seconds=900)
+    )
+
+
 def make_envelope(
     mail_from="sender@example.com",
     rcpt_tos=("bob@example.com",),

@@ -65,6 +65,52 @@ class TestLogin:
         assert app_client.get("/api/me").status_code == 401
 
 
+class TestLoginRateLimiting:
+    def test_locks_out_after_max_failed_attempts(self, rate_limited_app_client):
+        login(rate_limited_app_client, "bob@example.com", "bobs-password")
+        rate_limited_app_client.cookies.clear()
+
+        for _ in range(3):
+            response = login(rate_limited_app_client, "bob@example.com", "wrong-password")
+            assert response.status_code == 401
+
+        response = login(rate_limited_app_client, "bob@example.com", "bobs-password")
+        assert response.status_code == 429
+
+    def test_successful_login_resets_the_counter(self, rate_limited_app_client):
+        login(rate_limited_app_client, "bob@example.com", "bobs-password")
+        rate_limited_app_client.cookies.clear()
+
+        login(rate_limited_app_client, "bob@example.com", "wrong-password")
+        login(rate_limited_app_client, "bob@example.com", "wrong-password")
+        assert login(rate_limited_app_client, "bob@example.com", "bobs-password").status_code == 200
+        rate_limited_app_client.cookies.clear()
+
+        for _ in range(3):
+            response = login(rate_limited_app_client, "bob@example.com", "wrong-password")
+            assert response.status_code == 401
+        assert login(rate_limited_app_client, "bob@example.com", "bobs-password").status_code == 429
+
+    def test_rate_limit_is_per_mailbox(self, rate_limited_app_client):
+        login(rate_limited_app_client, "bob@example.com", "bobs-password")
+        login(rate_limited_app_client, "eve@example.com", "eves-password")
+        rate_limited_app_client.cookies.clear()
+
+        for _ in range(3):
+            login(rate_limited_app_client, "bob@example.com", "wrong-password")
+
+        response = login(rate_limited_app_client, "eve@example.com", "eves-password")
+        assert response.status_code == 200
+
+    def test_malformed_username_is_not_rate_limited(self, rate_limited_app_client):
+        """A username that never sanitizes to a valid mailbox can never
+        succeed anyway, so there's nothing to rate-limit -- and nothing to
+        key a limiter entry on."""
+        for _ in range(5):
+            response = login(rate_limited_app_client, "not-an-email", "whatever")
+            assert response.status_code == 401
+
+
 class TestMailboxIsolation:
     def test_inbox_only_shows_own_mail(self, app_client, storage):
         storage.save_message(make_envelope(rcpt_tos=("bob@example.com",), subject="For Bob"))
